@@ -10,8 +10,8 @@
   assert:
     that:
       - "'venv' in python_path.stdout"
-    fail_msg: "Please run ansible-playbook with the virtual environment's Python: {{ ansible_env.VIRTUAL_ENV }}/bin/ansible-playbook"
-    success_msg: "Using correct Python environment"
+    fail_msg: "Please run ansible-playbook from within your virtual environment (source venv/bin/activate)"
+    success_msg: "Using virtual environment Python: {{ python_path.stdout }}"
 
 - name: Verify required variables are defined
   assert:
