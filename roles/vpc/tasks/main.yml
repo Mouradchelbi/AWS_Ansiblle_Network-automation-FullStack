@@ -149,11 +149,34 @@
           }
         ]
       }
-    managed_policies:
-      - "arn:aws:iam::aws:policy/service-role/VPCFlowLogsDeliveryRolePolicy"
     state: present
   register: flowlogs_role
   when: enable_flow_logs
+
+- name: Attach inline policy to Flow Logs role
+  iam_policy:
+    iam_type: role
+    iam_name: "{{ vpc_name }}-flowlogs-role"
+    policy_name: "VPCFlowLogsDeliveryPolicy"
+    policy_document: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents",
+              "logs:DescribeLogGroups",
+              "logs:DescribeLogStreams"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    state: present
+  when: enable_flow_logs and flowlogs_role is defined
 
 - name: Check existing VPC Flow Logs
   shell: >
