@@ -22,13 +22,13 @@
     bastion_ami: "{{ sorted_amis[0].image_id }}"
 
 - name: Create bastion host launch template
-  ec2_launch_template:
+  amazon.aws.ec2_launch_template:
     name: "{{ vpc_name }}-bastion-lt"
     region: "{{ aws_region }}"
     image_id: "{{ bastion_ami }}"
     key_name: "{{ bastion_key_pair }}"
     instance_type: "{{ bastion_instance_type }}"
-    vpc_security_group_ids:
+    security_group_ids:
       - "{{ bastion_sg_id }}"
     user_data: |
       #!/bin/bash
