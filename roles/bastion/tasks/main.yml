@@ -155,10 +155,9 @@
   register: bastion_role
 
 - name: Create IAM instance profile for bastion host
-  iam_instance_profile:
+  amazon.aws.iam_instance_profile:
     name: "{{ vpc_name }}-bastion-profile"
-    roles:
-      - "{{ bastion_role.role_name }}"
+    role: "{{ bastion_role.role_name }}"
     state: present
   register: bastion_profile
 
