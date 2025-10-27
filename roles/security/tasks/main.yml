@@ -158,120 +158,41 @@
   register: public_nacl
 
 - name: Create Private Network ACL
-  ec2_vpc_nacl:
+  amazon.aws.ec2_vpc_nacl:
     name: "{{ private_nacl_name }}"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     subnets: "{{ private_subnet_ids }}"
     ingress:
-      - rule_no: 100
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 22
-        to_port: 22
-      - rule_no: 110
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 80
-        to_port: 80
-      - rule_no: 120
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 443
-        to_port: 443
-      - rule_no: 130
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 8080
-        to_port: 8080
-      - rule_no: 140
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 22, 22]      # SSH
+      - [110, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 80, 80]      # HTTP
+      - [120, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 443, 443]    # HTTPS
+      - [130, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 8080, 8080]  # App port
+      - [140, 'tcp', 'allow', '0.0.0.0/0', null, null, 1024, 65535]     # Ephemeral ports
     egress:
-      - rule_no: 100
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 80
-        to_port: 80
-      - rule_no: 110
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 443
-        to_port: 443
-      - rule_no: 120
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 22
-        to_port: 22
-      - rule_no: 130
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', null, null, 80, 80]          # HTTP out
+      - [110, 'tcp', 'allow', '0.0.0.0/0', null, null, 443, 443]        # HTTPS out
+      - [120, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 22, 22]      # SSH response
+      - [130, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 1024, 65535] # Response ports
     tags: "{{ common_tags | combine({'Name': private_nacl_name, 'Type': 'NetworkACL'}) }}"
+    state: present
   register: private_nacl
 
 - name: Create Database Network ACL
-  ec2_vpc_nacl:
+  amazon.aws.ec2_vpc_nacl:
     name: "{{ db_nacl_name }}"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     subnets: "{{ database_subnet_ids }}"
     ingress:
-      - rule_no: 100
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 22
-        to_port: 22
-      - rule_no: 110
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 3306
-        to_port: 3306
-      - rule_no: 120
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 5432
-        to_port: 5432
-      - rule_no: 130
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 22, 22]      # SSH
+      - [110, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 3306, 3306]  # MySQL
+      - [120, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 5432, 5432]  # PostgreSQL
+      - [130, 'tcp', 'allow', '0.0.0.0/0', null, null, 1024, 65535]     # Ephemeral ports
     egress:
-      - rule_no: 100
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 80
-        to_port: 80
-      - rule_no: 110
-        protocol: 6
-        action: allow
-        cidr_block: "0.0.0.0/0"
-        from_port: 443
-        to_port: 443
-      - rule_no: 120
-        protocol: 6
-        action: allow
-        cidr_block: "{{ vpc_cidr }}"
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', null, null, 80, 80]          # HTTP out
+      - [110, 'tcp', 'allow', '0.0.0.0/0', null, null, 443, 443]        # HTTPS out
+      - [120, 'tcp', 'allow', "{{ vpc_cidr }}", null, null, 1024, 65535] # Response ports
     tags: "{{ common_tags | combine({'Name': db_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: db_nacl
 
