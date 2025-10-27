@@ -80,26 +80,18 @@
   set_fact:
     database_subnet_ids: "{{ database_subnets_info.results | map(attribute='subnet.id') | list }}"
 
-- name: Check for unused Elastic IPs
-  shell: >
-    aws ec2 describe-addresses --region {{ aws_region }} --query 'Addresses[?AssociationId==null]'
-  register: unused_eips
-  changed_when: false
-  when: enable_nat_gateway
-
-- name: Display unused Elastic IPs
-  debug:
-    msg: "Found {{ (unused_eips.stdout | from_json) | length }} unused Elastic IPs"
-  when: enable_nat_gateway
-
 - name: Allocate Elastic IP for NAT Gateway
   ec2_eip:
     region: "{{ aws_region }}"
     in_vpc: true
     state: present
-    reuse_existing_ip_allowed: true
     tags: "{{ common_tags | combine({'Name': nat_eip_name, 'Type': 'ElasticIP'}) }}"
   register: nat_eip
+  when: enable_nat_gateway
+  
+- name: Debug NAT Gateway EIP allocation
+  debug:
+    msg: "Allocated EIP for NAT Gateway: {{ nat_eip }}"
   when: enable_nat_gateway
 
 - name: Create NAT Gateway
@@ -153,8 +145,13 @@
     region: "{{ aws_region }}"
     routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_id is defined) else [] }}"
     subnets: "{{ private_subnet_ids + database_subnet_ids }}"
-    tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable'}) }}"
+    tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable', 'Description': 'Single NAT Gateway for all private subnets'}) }}"
   register: private_rt
+  
+- name: Debug private route table creation
+  debug:
+    msg: "Private route table created with NAT Gateway: {{ private_rt }}"
+  when: enable_nat_gateway
 
 - name: Create VPC Flow Logs
   cloudwatchlogs_log_group:
