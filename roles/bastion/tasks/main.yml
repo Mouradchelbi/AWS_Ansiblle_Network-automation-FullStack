@@ -2,19 +2,24 @@
 # Bastion host deployment and configuration
 
 - name: Get latest Amazon Linux 2 AMI
-  ec2_ami_info:
+  amazon.aws.ec2_ami_info:
     region: "{{ aws_region }}"
-    owners:
-      - "amazon"
+    owners: amazon
     filters:
       name: "amzn2-ami-hvm-*-x86_64-gp2"
-      state: "available"
-    most_recent: true
+      architecture: x86_64
+      root-device-type: ebs
+      virtualization-type: hvm
+      state: available
   register: ami_info
+
+- name: Sort AMIs by creation date
+  set_fact:
+    sorted_amis: "{{ ami_info.images | sort(attribute='creation_date') | reverse }}"
 
 - name: Set AMI ID fact
   set_fact:
-    bastion_ami: "{{ ami_info.images[0].image_id }}"
+    bastion_ami: "{{ sorted_amis[0].image_id }}"
 
 - name: Create bastion host launch template
   ec2_launch_template:
