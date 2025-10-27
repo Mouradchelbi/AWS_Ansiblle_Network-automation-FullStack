@@ -151,55 +151,15 @@
     region: "{{ aws_region }}"
     subnets: "{{ public_subnet_ids }}"
     ingress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 80
-        to_port: 80
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 443
-        to_port: 443
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 22
-        to_port: 22
-      - rule_number: 130
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', 80, 80]      # HTTP
+      - [110, 'tcp', 'allow', '0.0.0.0/0', 443, 443]    # HTTPS
+      - [120, 'tcp', 'allow', '0.0.0.0/0', 22, 22]      # SSH
+      - [130, 'tcp', 'allow', '0.0.0.0/0', 1024, 65535] # Ephemeral ports
     egress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 80
-        to_port: 80
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 443
-        to_port: 443
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 22
-        to_port: 22
-      - rule_number: 130
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', 80, 80]      # HTTP
+      - [110, 'tcp', 'allow', '0.0.0.0/0', 443, 443]    # HTTPS
+      - [120, 'tcp', 'allow', '0.0.0.0/0', 22, 22]      # SSH
+      - [130, 'tcp', 'allow', '0.0.0.0/0', 1024, 65535] # Ephemeral ports
     tags: "{{ common_tags | combine({'Name': public_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: public_nacl
 
@@ -210,61 +170,16 @@
     region: "{{ aws_region }}"
     subnets: "{{ private_subnet_ids }}"
     ingress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 22
-        to_port: 22
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 80
-        to_port: 80
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 443
-        to_port: 443
-      - rule_number: 130
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 8080
-        to_port: 8080
-      - rule_number: 140
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '{{ vpc_cidr }}', 22, 22]       # SSH from VPC
+      - [110, 'tcp', 'allow', '{{ vpc_cidr }}', 80, 80]       # HTTP from VPC
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', 443, 443]     # HTTPS from VPC
+      - [130, 'tcp', 'allow', '{{ vpc_cidr }}', 8080, 8080]   # App port from VPC
+      - [140, 'tcp', 'allow', '0.0.0.0/0', 1024, 65535]      # Ephemeral ports
     egress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 80
-        to_port: 80
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 443
-        to_port: 443
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 22
-        to_port: 22
-      - rule_number: 130
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', 80, 80]           # HTTP
+      - [110, 'tcp', 'allow', '0.0.0.0/0', 443, 443]         # HTTPS
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', 22, 22]       # SSH to VPC
+      - [130, 'tcp', 'allow', '{{ vpc_cidr }}', 1024, 65535]  # Ephemeral to VPC
     tags: "{{ common_tags | combine({'Name': private_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: private_nacl
 
@@ -275,49 +190,14 @@
     region: "{{ aws_region }}"
     subnets: "{{ database_subnet_ids }}"
     ingress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 22
-        to_port: 22
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 3306
-        to_port: 3306
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 5432
-        to_port: 5432
-      - rule_number: 130
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '{{ vpc_cidr }}', 22, 22]       # SSH from VPC
+      - [110, 'tcp', 'allow', '{{ vpc_cidr }}', 3306, 3306]   # MySQL from VPC
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', 5432, 5432]   # PostgreSQL from VPC
+      - [130, 'tcp', 'allow', '0.0.0.0/0', 1024, 65535]      # Ephemeral ports
     egress:
-      - rule_number: 100
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 80
-        to_port: 80
-      - rule_number: 110
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: 443
-        to_port: 443
-      - rule_number: 120
-        protocol: tcp
-        rule_action: allow
-        cidr_ipv4: '{{ vpc_cidr }}'
-        from_port: 1024
-        to_port: 65535
+      - [100, 'tcp', 'allow', '0.0.0.0/0', 80, 80]           # HTTP for updates
+      - [110, 'tcp', 'allow', '0.0.0.0/0', 443, 443]         # HTTPS for updates
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', 1024, 65535]  # Ephemeral to VPC
     tags: "{{ common_tags | combine({'Name': db_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: db_nacl
 
