@@ -1,0 +1,142 @@
+name: AWS VPC Automation CI/CD
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  ANSIBLE_HOST_KEY_CHECKING: 'false'
+  AWS_DEFAULT_REGION: 'us-east-1'
+
+jobs:
+  validate:
+    name: Validate Ansible Playbooks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws
+
+      - name: Validate Ansible Syntax
+        run: |
+          ansible-playbook -i inventory/hosts site.yml --syntax-check
+          ansible-playbook -i inventory/hosts playbooks/deploy.yml --syntax-check
+          ansible-playbook -i inventory/hosts playbooks/validate.yml --syntax-check
+          ansible-playbook -i inventory/hosts playbooks/destroy.yml --syntax-check
+
+      - name: Validate AWS Credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws sts get-caller-identity
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: validate
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'))
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency: staging-env
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws
+
+      - name: Deploy to Staging
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          # Override variables for staging environment
+          echo "env_name: staging" >> inventory/group_vars/all.yml
+          ansible-playbook -i inventory/hosts site.yml
+
+      - name: Validate Deployment
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: ansible-playbook -i inventory/hosts playbooks/validate.yml
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [validate, deploy-staging]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency: production-env
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install ansible boto3 botocore
+          ansible-galaxy collection install amazon.aws
+
+      - name: Deploy to Production
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          # Override variables for production environment
+          echo "env_name: production" >> inventory/group_vars/all.yml
+          ansible-playbook -i inventory/hosts site.yml
+
+      - name: Validate Deployment
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: ansible-playbook -i inventory/hosts playbooks/validate.yml
+
+  notify:
+    name: Send Notification
+    needs: [deploy-staging, deploy-production]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack notification
+        if: env.SLACK_WEBHOOK
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
