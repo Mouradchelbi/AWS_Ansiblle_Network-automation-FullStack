@@ -158,7 +158,7 @@
     iam_type: role
     iam_name: "{{ vpc_name }}-flowlogs-role"
     policy_name: "VPCFlowLogsDeliveryPolicy"
-    policy_document: |
+    policy_json: |
       {
         "Version": "2012-10-17",
         "Statement": [
