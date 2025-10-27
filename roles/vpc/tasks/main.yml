@@ -80,6 +80,33 @@
   set_fact:
     database_subnet_ids: "{{ database_subnets_info.results | map(attribute='subnet.id') | list }}"
 
+- name: Check existing Elastic IPs
+  shell: >
+    aws ec2 describe-addresses --region {{ aws_region }} --output json
+  register: existing_eips
+  changed_when: false
+  when: enable_nat_gateway
+
+- name: Set fact for existing EIP count
+  set_fact:
+    existing_eip_count: "{{ (existing_eips.stdout | from_json).Addresses | length }}"
+  when: enable_nat_gateway
+
+- name: Display EIP status
+  debug:
+    msg: "Current EIP count: {{ existing_eip_count }}"
+  when: enable_nat_gateway
+
+- name: Warn about NAT Gateway skip
+  debug:
+    msg: "WARNING: Skipping NAT Gateway creation due to EIP limits. Private subnets will not have internet access."
+  when: enable_nat_gateway and existing_eip_count >= 5
+
+- name: Set NAT Gateway enabled fact
+  set_fact:
+    nat_gateway_possible: "{{ existing_eip_count < 5 }}"
+  when: enable_nat_gateway
+
 - name: Allocate Elastic IP for NAT Gateway
   ec2_eip:
     region: "{{ aws_region }}"
@@ -87,12 +114,7 @@
     state: present
     tags: "{{ common_tags | combine({'Name': nat_eip_name, 'Type': 'ElasticIP'}) }}"
   register: nat_eip
-  when: enable_nat_gateway
-  
-- name: Debug NAT Gateway EIP allocation
-  debug:
-    msg: "Allocated EIP for NAT Gateway: {{ nat_eip }}"
-  when: enable_nat_gateway
+  when: enable_nat_gateway and nat_gateway_possible
 
 - name: Create NAT Gateway
   ec2_vpc_nat_gateway:
@@ -102,7 +124,7 @@
     state: present
     tags: "{{ common_tags | combine({'Name': nat_gateway_name, 'Type': 'NATGateway'}) }}"
   register: nat_gateway_info
-  when: enable_nat_gateway
+  when: enable_nat_gateway and nat_gateway_possible and nat_eip is defined
 
 - name: Set NAT Gateway ID fact
   set_fact:
@@ -143,15 +165,22 @@
   ec2_vpc_route_table:
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_id is defined) else [] }}"
+    routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined) else [] }}"
     subnets: "{{ private_subnet_ids + database_subnet_ids }}"
-    tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable', 'Description': 'Single NAT Gateway for all private subnets'}) }}"
+    tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable', 'Description': 'Private subnets route table'}) }}"
   register: private_rt
-  
-- name: Debug private route table creation
+
+- name: Display private subnet routing status
   debug:
-    msg: "Private route table created with NAT Gateway: {{ private_rt }}"
-  when: enable_nat_gateway
+    msg: >-
+      Private subnets status:
+      {% if enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined %}
+      - Internet access: Enabled via NAT Gateway
+      - NAT Gateway ID: {{ nat_gateway_id }}
+      {% else %}
+      - Internet access: Disabled (No NAT Gateway available)
+      - Note: Private subnets will not have outbound internet access
+      {% endif %}
 
 - name: Create VPC Flow Logs
   cloudwatchlogs_log_group:
