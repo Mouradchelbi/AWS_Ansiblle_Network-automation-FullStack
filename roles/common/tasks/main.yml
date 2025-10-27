@@ -1,12 +1,17 @@
 ---
 # Common tasks for AWS VPC automation
 
-- name: Verify virtual environment is active
+- name: Get Python executable path
+  command: which python
+  register: python_path
+  changed_when: false
+
+- name: Verify Python is running from virtual environment
   assert:
     that:
-      - ansible_env.VIRTUAL_ENV is defined
-    fail_msg: "Virtual environment is not active. Please activate your virtual environment first."
-    success_msg: "Virtual environment is active."
+      - "'venv' in python_path.stdout"
+    fail_msg: "Please run ansible-playbook with the virtual environment's Python: {{ ansible_env.VIRTUAL_ENV }}/bin/ansible-playbook"
+    success_msg: "Using correct Python environment"
 
 - name: Verify required variables are defined
   assert:
@@ -34,11 +39,9 @@
       - boto3
       - botocore
     state: present
-    virtualenv: "{{ ansible_env.VIRTUAL_ENV }}"
-    virtualenv_python: "{{ ansible_python.executable }}"
+    executable: "{{ python_path.stdout | dirname }}/pip"
   delegate_to: localhost
   run_once: true
-  when: ansible_env.VIRTUAL_ENV is defined
 
 - name: Check AWS CLI configuration
   command: aws sts get-caller-identity
