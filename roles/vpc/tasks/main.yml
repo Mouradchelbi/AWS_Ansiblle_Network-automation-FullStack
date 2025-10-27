@@ -185,6 +185,19 @@
   when: enable_flow_logs
   changed_when: false
 
+- name: Debug Flow Logs variables
+  debug:
+    msg: |
+      VPC Flow Logs Variables:
+      - flowlogs_role: {{ flowlogs_role | to_nice_json }}
+      - vpc_id: {{ vpc_id }}
+      - vpc_flow_log_group: {{ vpc_flow_log_group }}
+
+- name: Set Flow Logs Role ARN fact
+  set_fact:
+    flow_logs_role_arn: "{{ flowlogs_role.role.arn }}"
+  when: enable_flow_logs and flowlogs_role is defined
+
 - name: Enable VPC Flow Logs
   shell: >
     aws ec2 create-flow-logs 
@@ -193,7 +206,7 @@
     --traffic-type ALL 
     --log-destination-type cloud-watch-logs
     --log-group-name {{ vpc_flow_log_group }}
-    --deliver-logs-permission-arn {{ flowlogs_role.role.arn }}
+    --deliver-logs-permission-arn {{ flow_logs_role_arn }}
     --region {{ aws_region }}
   when: enable_flow_logs and flowlogs_role is defined and (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
 
