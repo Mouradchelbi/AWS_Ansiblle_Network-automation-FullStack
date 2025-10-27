@@ -7,7 +7,7 @@
   become: false
   
   vars:
-    destroy_mode: "{{ destroy_mode | default('confirm') }}"  # confirm, force
+    destroy_mode: "{{ lookup('env', 'DESTROY_MODE') | default('confirm', true) }}"  # confirm, force
     
   pre_tasks:
     - name: Confirmation prompt for infrastructure destruction
