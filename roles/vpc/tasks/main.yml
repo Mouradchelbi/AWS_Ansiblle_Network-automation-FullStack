@@ -156,7 +156,7 @@
   when: enable_flow_logs
 
 - name: Enable VPC Flow Logs
-  community.aws.ec2_vpc_flow_log:
+  ec2_vpc_flow_log:
     vpc_id: "{{ vpc_id }}"
     traffic_type: "ALL"
     log_destination_type: "cloud-watch-logs"
