@@ -82,10 +82,12 @@
       register: elastic_ips
     
     - name: Release each Elastic IP
-      ec2_eip:
+      amazon.aws.ec2_eip:
         region: "{{ aws_region }}"
-        allocation_id: "{{ item.allocation_id }}"
+        device_id: "{{ item.network_interface_id }}"
+        public_ip: "{{ item.public_ip }}"
         state: absent
+        in_vpc: true
       loop: "{{ elastic_ips.addresses }}"
       when: elastic_ips.addresses | length > 0
     
