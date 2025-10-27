@@ -115,11 +115,30 @@
     tags: "{{ common_tags | combine({'Name': public_route_table_name, 'Type': 'RouteTable'}) }}"
   register: public_rt
 
+- name: Debug NAT Gateway status
+  debug:
+    msg: |
+      NAT Gateway Status:
+      - enable_nat_gateway: {{ enable_nat_gateway | default(false) }}
+      - nat_gateway_info: {{ nat_gateway_info | default({}) | to_nice_json }}
+      - nat_gateway_id: {{ nat_gateway_id | default('Not set') }}
+
+- name: Wait for NAT Gateway to be available
+  ec2_vpc_nat_gateway_info:
+    nat_gateway_ids:
+      - "{{ nat_gateway_id }}"
+    region: "{{ aws_region }}"
+  register: nat_gateway_status
+  until: nat_gateway_status.result[0].state == "available"
+  retries: 30
+  delay: 10
+  when: enable_nat_gateway and nat_gateway_id is defined
+
 - name: Create private route table
   ec2_vpc_route_table:
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    routes: "{{ [{'dest': '0.0.0.0/0', 'gateway_id': nat_gateway_id}] if enable_nat_gateway else [] }}"
+    routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_id is defined) else [] }}"
     subnets: "{{ private_subnet_ids + database_subnet_ids }}"
     tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable'}) }}"
   register: private_rt
