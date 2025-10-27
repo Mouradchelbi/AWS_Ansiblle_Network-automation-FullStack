@@ -156,15 +156,23 @@
   when: enable_flow_logs
 
 - name: Enable VPC Flow Logs
-  ec2_vpc_flow_log:
+  amazon.aws.ec2_vpc_flow_log_info:
+    filters:
+      vpc-id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+  register: existing_flow_logs
+  when: enable_flow_logs
+
+- name: Create VPC Flow Log if not exists
+  amazon.aws.ec2_vpc_flow_log:
     vpc_id: "{{ vpc_id }}"
     traffic_type: "ALL"
     log_destination_type: "cloud-watch-logs"
     log_group_name: "{{ vpc_flow_log_group }}"
-    iam_role_arn: "{{ flowlogs_role.arn }}"
+    deliver_logs_permission_arn: "{{ flowlogs_role.arn }}"
     region: "{{ aws_region }}"
     state: present
-  when: enable_flow_logs and flowlogs_role is defined
+  when: enable_flow_logs and flowlogs_role is defined and (existing_flow_logs.flow_logs | length == 0)
 
 - name: Display VPC deployment summary
   debug:
