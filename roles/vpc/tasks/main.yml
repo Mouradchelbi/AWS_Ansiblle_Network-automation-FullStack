@@ -161,10 +161,10 @@
       - "{{ nat_gateway_id }}"
     region: "{{ aws_region }}"
   register: nat_gateway_status
-  until: nat_gateway_status.result[0].state == "available"
+  until: nat_gateway_status.nat_gateways[0].state == "available"
   retries: 30
   delay: 10
-  when: enable_nat_gateway and nat_gateway_id is defined
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
 
 - name: Create private route table
   ec2_vpc_route_table:
@@ -179,10 +179,11 @@
   debug:
     msg: |
       NAT Gateway Configuration Status:
-      - NAT Gateway Enabled: {{ enable_nat_gateway | default(false) }}
-      - NAT Gateway Possible: {{ nat_gateway_possible | default(false) }}
+      - NAT Gateway Enabled in Config: {{ enable_nat_gateway | default(false) }}
+      - NAT Gateway Creation Possible: {{ nat_gateway_possible | default(false) }}
       - NAT Gateway ID: {{ nat_gateway_id | default('Not created') }}
       - EIP Status: {{ 'Available' if nat_gateway_possible else 'Limit reached' }}
+      - Creation Status: {{ 'Skipped due to EIP limits' if not nat_gateway_possible else ('Pending' if enable_nat_gateway else 'Disabled in config') }}
 
 - name: Display private subnet routing status
   debug:
