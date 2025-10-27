@@ -267,10 +267,24 @@
       - vpc_id: {{ vpc_id }}
       - vpc_flow_log_group: {{ vpc_flow_log_group }}
 
+- name: Debug Flow Logs Role
+  debug:
+    var: flowlogs_role
+  when: enable_flow_logs and flowlogs_role is defined
+
 - name: Set Flow Logs Role ARN fact
   set_fact:
-    flow_logs_role_arn: "{{ flowlogs_role.role.arn }}"
-  when: enable_flow_logs and flowlogs_role is defined
+    flow_logs_role_arn: "arn:aws:iam::{{ flowlogs_role.iam_role.arn.split(':')[4] }}:role/{{ flowlogs_role.iam_role.role_name }}"
+  when: enable_flow_logs and flowlogs_role is defined and flowlogs_role.iam_role is defined
+
+- name: Debug Flow Logs parameters
+  debug:
+    msg: |
+      Flow Logs Configuration:
+      - VPC ID: {{ vpc_id }}
+      - Log Group: {{ vpc_flow_log_group }}
+      - Role ARN: {{ flow_logs_role_arn }}
+  when: enable_flow_logs
 
 - name: Enable VPC Flow Logs
   shell: >
@@ -282,6 +296,14 @@
     --log-group-name {{ vpc_flow_log_group }}
     --deliver-logs-permission-arn {{ flow_logs_role_arn }}
     --region {{ aws_region }}
+  register: flow_logs_result
+  when: enable_flow_logs and flow_logs_role_arn is defined
+  ignore_errors: true
+
+- name: Display Flow Logs creation result
+  debug:
+    msg: "Flow Logs creation {{ 'succeeded' if flow_logs_result.rc == 0 else 'failed: ' + flow_logs_result.stderr }}"
+  when: enable_flow_logs and flow_logs_result is defined
   when: enable_flow_logs and flowlogs_role is defined and (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
 
 - name: Display VPC deployment summary
