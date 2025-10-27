@@ -44,7 +44,7 @@
   
   tasks:
     - name: Get VPC information
-      ec2_vpc_info:
+      amazon.aws.ec2_vpc_net_info:
         region: "{{ aws_region }}"
         filters:
           "tag:Name": "{{ vpc_name }}"
@@ -56,7 +56,7 @@
       when: existing_vpc.vpcs | length > 0
     
     - name: Terminate bastion host instances
-      ec2_instance_info:
+      amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         filters:
           "tag:Name": "{{ vpc_name }}-bastion-host"
@@ -73,7 +73,7 @@
       when: bastion_instances.instances | length > 0
     
     - name: Release Elastic IPs
-      ec2_eip_info:
+      amazon.aws.ec2_eip_info:
         region: "{{ aws_region }}"
         filters:
           "tag:Name": 
@@ -90,7 +90,7 @@
       when: elastic_ips.addresses | length > 0
     
     - name: Delete NAT Gateway
-      ec2_vpc_nat_gateway_info:
+      amazon.aws.ec2_vpc_nat_gateway_info:
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_id }}"
@@ -114,7 +114,7 @@
       ignore_errors: true
     
     - name: Delete security groups
-      ec2_group_info:
+      amazon.aws.ec2_security_group_info:
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_id }}"
@@ -134,7 +134,7 @@
       ignore_errors: true
     
     - name: Delete subnets
-      ec2_vpc_subnet_info:
+      amazon.aws.ec2_vpc_subnet_info:
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_id }}"
@@ -150,7 +150,7 @@
       when: vpc_id is defined and subnets_info.subnets | length > 0
     
     - name: Delete route tables
-      ec2_vpc_route_table_info:
+      amazon.aws.ec2_vpc_route_table_info:
         region: "{{ aws_region }}"
         filters:
           vpc-id: "{{ vpc_id }}"
@@ -171,7 +171,7 @@
       ignore_errors: true
     
     - name: Delete Internet Gateway
-      ec2_vpc_igw_info:
+      amazon.aws.ec2_vpc_igw_info:
         region: "{{ aws_region }}"
         filters:
           attachment.vpc-id: "{{ vpc_id }}"
