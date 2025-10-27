@@ -144,6 +144,10 @@ EOF
     # Install dependencies in virtual environment
     $VENV_PATH/bin/pip install -r requirements.txt
     
+    # Install required Ansible collections
+    print_status "Installing required Ansible collections..."
+    $VENV_PATH/bin/ansible-galaxy collection install amazon.aws
+    
     # Create activation script for later use
     cat > activate_venv.sh << EOF
 #!/bin/bash
