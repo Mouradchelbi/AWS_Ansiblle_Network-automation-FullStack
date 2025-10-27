@@ -15,6 +15,18 @@
         {
             "Effect": "Allow",
             "Action": [
+                "ec2:DisassociateAddress",
+                "ec2:ReleaseAddress",
+                "ec2:DescribeAddresses",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DeleteNatGateway",
+                "ec2:DescribeNatGateways"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
                 "iam:PassRole",
                 "iam:CreateRole",
                 "iam:PutRolePolicy",
