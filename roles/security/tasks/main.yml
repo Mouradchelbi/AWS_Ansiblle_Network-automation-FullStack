@@ -151,19 +151,9 @@
     region: "{{ aws_region }}"
     subnets: "{{ public_subnet_ids }}"
     ingress:
-      - rule_number: 100
-        protocol: -1
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: -1
-        to_port: -1
+      - [100, 'all', 'allow', '0.0.0.0/0', null, null, -1, -1]  # Allow all inbound traffic
     egress:
-      - rule_number: 100
-        protocol: -1
-        rule_action: allow
-        cidr_ipv4: '0.0.0.0/0'
-        from_port: -1
-        to_port: -1
+      - [100, 'all', 'allow', '0.0.0.0/0', null, null, -1, -1]  # Allow all outbound traffic
     tags: "{{ common_tags | combine({'Name': public_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: public_nacl
 
