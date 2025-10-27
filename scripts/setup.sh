@@ -72,22 +72,14 @@ check_prerequisites() {
     fi
 }
 
-# Install Ansible if not present
+# Install Ansible in virtual environment
 install_ansible() {
-    if command -v ansible &> /dev/null; then
-        ANSIBLE_VERSION=$(ansible --version | head -n1)
-        print_status "Ansible already installed: $ANSIBLE_VERSION"
+    # Ansible will be installed by pip in the virtual environment during install_python_deps
+    if [ -f "./venv/bin/ansible" ]; then
+        ANSIBLE_VERSION=$(./venv/bin/ansible --version | head -n1)
+        print_status "Ansible already installed in virtual environment: $ANSIBLE_VERSION"
     else
-        print_status "Installing Ansible..."
-        pip3 install --user ansible
-        
-        # Add to PATH if not already there
-        if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-            echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-            export PATH="$HOME/.local/bin:$PATH"
-        fi
-        
-        print_status "Ansible installed successfully"
+        print_status "Ansible will be installed in virtual environment during dependency installation"
     fi
 }
 
@@ -116,9 +108,25 @@ install_aws_cli() {
     fi
 }
 
-# Install Python dependencies
+# Install Python dependencies in a virtual environment
 install_python_deps() {
-    print_status "Installing Python dependencies..."
+    print_status "Setting up Python virtual environment..."
+    
+    # Install python3-venv if not present
+    if ! dpkg -l | grep -q python3-venv; then
+        print_status "Installing python3-venv..."
+        sudo apt-get update
+        sudo apt-get install -y python3-venv python3-full
+    fi
+    
+    # Create virtual environment
+    VENV_PATH="./venv"
+    python3 -m venv $VENV_PATH
+    
+    # Activate virtual environment
+    source $VENV_PATH/bin/activate
+    
+    print_status "Installing Python dependencies in virtual environment..."
     
     # Create requirements.txt if it doesn't exist
     cat > requirements.txt << 'EOF'
@@ -130,8 +138,21 @@ jinja2>=3.0.0
 cryptography>=3.4.0
 EOF
     
-    pip3 install --user -r requirements.txt
-    print_status "Python dependencies installed"
+    # Upgrade pip in virtual environment
+    $VENV_PATH/bin/pip install --upgrade pip
+    
+    # Install dependencies in virtual environment
+    $VENV_PATH/bin/pip install -r requirements.txt
+    
+    # Create activation script for later use
+    cat > activate_venv.sh << EOF
+#!/bin/bash
+source $VENV_PATH/bin/activate
+EOF
+    chmod +x activate_venv.sh
+    
+    print_status "Python dependencies installed in virtual environment"
+    print_status "To activate the virtual environment later, run: source ./activate_venv.sh"
 }
 
 # Configure AWS credentials
