@@ -144,26 +144,66 @@
     tags: "{{ common_tags | combine({'Name': db_sg_name, 'Type': 'SecurityGroup'}) }}"
   register: db_sg
 
+- name: Debug Public NACL ingress rules
+  debug:
+    msg: "Public NACL ingress: {{ public_nacl_ingress if public_nacl_ingress is defined else [] }} (type: {{ (public_nacl_ingress if public_nacl_ingress is defined else []) | type_debug }})"
+
 - name: Create Public Network ACL
   ec2_vpc_nacl:
     name: "{{ public_nacl_name }}"
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     subnets: "{{ public_subnet_ids }}"
-    ingress: >-
-      {{ public_nacl_ingress | default([
-        {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},
-        {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},
-        {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},
-        {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}
-      ]) }}
-    egress: >-
-      {{ public_nacl_egress | default([
-        {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},
-        {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},
-        {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},
-        {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}
-      ]) }}
+    ingress:
+      - rule_no: 100
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 80
+        to_port: 80
+      - rule_no: 110
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 443
+        to_port: 443
+      - rule_no: 120
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 22
+        to_port: 22
+      - rule_no: 130
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 1024
+        to_port: 65535
+    egress:
+      - rule_no: 100
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 80
+        to_port: 80
+      - rule_no: 110
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 443
+        to_port: 443
+      - rule_no: 120
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 22
+        to_port: 22
+      - rule_no: 130
+        protocol: 6
+        action: allow
+        cidr_block: '0.0.0.0/0'
+        from_port: 1024
+        to_port: 65535
     tags: "{{ common_tags | combine({'Name': public_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: public_nacl
 
@@ -175,60 +215,60 @@
     subnets: "{{ private_subnet_ids }}"
     ingress:
       - rule_no: 100
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 22
-        to_port: 22      # SSH from VPC
+        to_port: 22
       - rule_no: 110
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 80
-        to_port: 80      # HTTP from VPC
+        to_port: 80
       - rule_no: 120
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 443
-        to_port: 443     # HTTPS from VPC
+        to_port: 443
       - rule_no: 130
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 8080
-        to_port: 8080    # App port from VPC
+        to_port: 8080
       - rule_no: 140
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 1024
-        to_port: 65535   # Ephemeral ports
+        to_port: 65535
     egress:
       - rule_no: 100
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 80
-        to_port: 80      # HTTP
+        to_port: 80
       - rule_no: 110
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 443
-        to_port: 443     # HTTPS
+        to_port: 443
       - rule_no: 120
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 22
-        to_port: 22      # SSH to VPC
+        to_port: 22
       - rule_no: 130
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 1024
-        to_port: 65535   # Ephemeral to VPC
+        to_port: 65535
     tags: "{{ common_tags | combine({'Name': private_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: private_nacl
 
@@ -240,48 +280,48 @@
     subnets: "{{ database_subnet_ids }}"
     ingress:
       - rule_no: 100
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 22
-        to_port: 22      # SSH from VPC
+        to_port: 22
       - rule_no: 110
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 3306
-        to_port: 3306    # MySQL from VPC
+        to_port: 3306
       - rule_no: 120
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 5432
-        to_port: 5432    # PostgreSQL from VPC
+        to_port: 5432
       - rule_no: 130
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 1024
-        to_port: 65535   # Ephemeral ports
+        to_port: 65535
     egress:
       - rule_no: 100
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 80
-        to_port: 80      # HTTP for updates
+        to_port: 80
       - rule_no: 110
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "0.0.0.0/0"
         from_port: 443
-        to_port: 443     # HTTPS for updates
+        to_port: 443
       - rule_no: 120
-        protocol: tcp
+        protocol: 6
         action: allow
         cidr_block: "{{ vpc_cidr }}"
         from_port: 1024
-        to_port: 65535   # Ephemeral to VPC
+        to_port: 65535
     tags: "{{ common_tags | combine({'Name': db_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: db_nacl
 
