@@ -150,18 +150,20 @@
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     subnets: "{{ public_subnet_ids }}"
-    ingress: "{{ public_nacl_ingress | default([
-      {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},      # HTTP
-      {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},    # HTTPS
-      {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},      # SSH
-      {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}  # Ephemeral ports
-    ]) }}"
-    egress: "{{ public_nacl_egress | default([
-      {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},      # HTTP
-      {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},    # HTTPS
-      {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},      # SSH
-      {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}  # Ephemeral ports
-    ]) }}"
+    ingress: >-
+      {{ public_nacl_ingress | default([
+        {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},
+        {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},
+        {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},
+        {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}
+      ]) }}
+    egress: >-
+      {{ public_nacl_egress | default([
+        {'rule_no': 100, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 80, 'to_port': 80},
+        {'rule_no': 110, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 443, 'to_port': 443},
+        {'rule_no': 120, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 22, 'to_port': 22},
+        {'rule_no': 130, 'protocol': 'tcp', 'action': 'allow', 'cidr_block': '0.0.0.0/0', 'from_port': 1024, 'to_port': 65535}
+      ]) }}
     tags: "{{ common_tags | combine({'Name': public_nacl_name, 'Type': 'NetworkACL'}) }}"
   register: public_nacl
 
