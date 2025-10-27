@@ -57,13 +57,16 @@ enable_dns_hostnames: true
 enable_dns_support: true
 enable_ssm_access: true  # Enable AWS Session Manager for bastion access
 
+# Get current date for tagging
+current_date: "{{ lookup('pipe', 'date +%Y-%m-%d') }}"
+
 # Tagging strategy
 common_tags:
   Environment: "{{ env_name }}"
   Project: "{{ project_name }}"
   Owner: "{{ owner }}"
   ManagedBy: "Ansible"
-  CreatedDate: "{{ ansible_date_time.date }}"
+  CreatedDate: "{{ current_date }}"
   
 # Cost management tags
 cost_center: "infrastructure"
