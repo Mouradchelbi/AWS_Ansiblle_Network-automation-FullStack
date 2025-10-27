@@ -28,7 +28,16 @@ The automation creates a production-ready VPC with:
 - **Libraries**: boto3, botocore (auto-installed)
 
 ### 2. Required IAM Permissions
-The EC2 instance needs an IAM role with these permissions:
+The EC2 instance (Ansible Control Machine) needs an IAM role with the following AWS managed policies:
+
+1. Required AWS Managed Policies:
+   - `AmazonEC2FullAccess`
+   - `AmazonVPCFullAccess`
+   - `CloudWatchFullAccess`
+   - `IAMFullAccess`
+   - `AmazonSNSFullAccess`
+
+Alternatively, you can use a custom policy with these permissions:
 
 ```json
 {
@@ -39,6 +48,9 @@ The EC2 instance needs an IAM role with these permissions:
             "Action": [
                 "ec2:*",
                 "vpc:*",
+                "elasticloadbalancing:*",
+                "cloudwatch:*",
+                "autoscaling:*",
                 "iam:PassRole",
                 "iam:CreateRole",
                 "iam:CreateInstanceProfile",

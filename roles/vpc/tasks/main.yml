@@ -156,14 +156,12 @@
   when: enable_flow_logs
 
 - name: Enable VPC Flow Logs
-  ec2_vpc_flow_log:
-    resource_type: "VPC"
-    resource_ids:
-      - "{{ vpc_id }}"
+  amazon.aws.ec2_vpc_flow_log:
+    vpc_id: "{{ vpc_id }}"
     traffic_type: "ALL"
     log_destination_type: "cloud-watch-logs"
     log_group_name: "{{ vpc_flow_log_group }}"
-    deliver_logs_permission_arn: "{{ flowlogs_role.arn }}"
+    iam_role_arn: "{{ flowlogs_role.arn }}"
     region: "{{ aws_region }}"
     state: present
   when: enable_flow_logs and flowlogs_role is defined
