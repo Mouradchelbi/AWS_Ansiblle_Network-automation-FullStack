@@ -193,7 +193,7 @@
     --traffic-type ALL 
     --log-destination-type cloud-watch-logs
     --log-group-name {{ vpc_flow_log_group }}
-    --deliver-logs-permission-arn {{ flowlogs_role.arn }}
+    --deliver-logs-permission-arn {{ flowlogs_role.role.arn }}
     --region {{ aws_region }}
   when: enable_flow_logs and flowlogs_role is defined and (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
 
