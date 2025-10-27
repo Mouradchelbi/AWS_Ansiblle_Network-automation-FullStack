@@ -1,6 +1,13 @@
 ---
 # Common tasks for AWS VPC automation
 
+- name: Verify virtual environment is active
+  assert:
+    that:
+      - ansible_env.VIRTUAL_ENV is defined
+    fail_msg: "Virtual environment is not active. Please activate your virtual environment first."
+    success_msg: "Virtual environment is active."
+
 - name: Verify required variables are defined
   assert:
     that:
@@ -27,8 +34,11 @@
       - boto3
       - botocore
     state: present
+    virtualenv: "{{ ansible_env.VIRTUAL_ENV }}"
+    virtualenv_python: "{{ ansible_python.executable }}"
   delegate_to: localhost
   run_once: true
+  when: ansible_env.VIRTUAL_ENV is defined
 
 - name: Check AWS CLI configuration
   command: aws sts get-caller-identity
