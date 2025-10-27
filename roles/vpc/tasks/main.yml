@@ -128,8 +128,13 @@
 
 - name: Set NAT Gateway ID fact
   set_fact:
-    nat_gateway_id: "{{ nat_gateway_info.nat_gateway_id }}"
-  when: enable_nat_gateway and nat_gateway_info is defined
+    nat_gateway_id: "{{ nat_gateway_info.nat_gateway_id | default(omit) }}"
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_info is defined and nat_gateway_info.nat_gateway_id is defined
+
+- name: Set empty NAT Gateway ID fact when skipped
+  set_fact:
+    nat_gateway_id: ""
+  when: not (enable_nat_gateway and nat_gateway_possible and nat_gateway_info is defined and nat_gateway_info.nat_gateway_id is defined)
 
 - name: Create public route table
   ec2_vpc_route_table:
@@ -165,21 +170,31 @@
   ec2_vpc_route_table:
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
-    routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined) else [] }}"
+    routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != '') else [] }}"
     subnets: "{{ private_subnet_ids + database_subnet_ids }}"
     tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable', 'Description': 'Private subnets route table'}) }}"
   register: private_rt
+
+- name: Debug NAT Gateway status
+  debug:
+    msg: |
+      NAT Gateway Configuration Status:
+      - NAT Gateway Enabled: {{ enable_nat_gateway | default(false) }}
+      - NAT Gateway Possible: {{ nat_gateway_possible | default(false) }}
+      - NAT Gateway ID: {{ nat_gateway_id | default('Not created') }}
+      - EIP Status: {{ 'Available' if nat_gateway_possible else 'Limit reached' }}
 
 - name: Display private subnet routing status
   debug:
     msg: >-
       Private subnets status:
-      {% if enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined %}
+      {% if enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != '' %}
       - Internet access: Enabled via NAT Gateway
       - NAT Gateway ID: {{ nat_gateway_id }}
       {% else %}
       - Internet access: Disabled (No NAT Gateway available)
       - Note: Private subnets will not have outbound internet access
+      - Reason: {{ 'EIP limit reached' if not nat_gateway_possible else 'NAT Gateway not enabled or failed to create' }}
       {% endif %}
 
 - name: Create VPC Flow Logs
