@@ -1,0 +1,36 @@
+---
+# Main playbook for AWS VPC Full Stack deployment
+- name: Deploy AWS VPC Full Stack Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+
+  roles:
+    - role: common
+      tags: ['common', 'setup']
+    
+    - role: vpc
+      tags: ['vpc', 'networking', 'infrastructure']
+    
+    - role: security
+      tags: ['security', 'firewall', 'nacl', 'sg']
+    
+    - role: bastion
+      tags: ['bastion', 'compute', 'access']
+
+  post_tasks:
+    - name: Display deployment summary
+      debug:
+        msg: |
+          ================================
+          VPC DEPLOYMENT COMPLETED
+          ================================
+          VPC ID: {{ vpc_info.vpc.id }}
+          Region: {{ aws_region }}
+          Environment: {{ env_name }}
+          Public Subnets: {{ public_subnet_ids | length }}
+          Private Subnets: {{ private_subnet_ids | length }}
+          Bastion Host: {{ bastion_instance.instances[0].public_ip_address if bastion_instance.instances else 'Not deployed' }}
+          ================================
+      when: vpc_info is defined

@@ -1,0 +1,248 @@
+---
+# Bastion host deployment and configuration
+
+- name: Get latest Amazon Linux 2 AMI
+  ec2_ami_info:
+    region: "{{ aws_region }}"
+    owners:
+      - "amazon"
+    filters:
+      name: "amzn2-ami-hvm-*-x86_64-gp2"
+      state: "available"
+    most_recent: true
+  register: ami_info
+
+- name: Set AMI ID fact
+  set_fact:
+    bastion_ami: "{{ ami_info.images[0].image_id }}"
+
+- name: Create bastion host launch template
+  ec2_launch_template:
+    name: "{{ vpc_name }}-bastion-lt"
+    region: "{{ aws_region }}"
+    image_id: "{{ bastion_ami }}"
+    key_name: "{{ bastion_key_pair }}"
+    instance_type: "{{ bastion_instance_type }}"
+    vpc_security_group_ids:
+      - "{{ bastion_sg_id }}"
+    user_data: |
+      #!/bin/bash
+      yum update -y
+      yum install -y aws-cli
+      yum install -y htop tree vim wget curl
+      
+      # Install additional security tools
+      yum install -y fail2ban
+      systemctl enable fail2ban
+      systemctl start fail2ban
+      
+      # Configure SSH hardening
+      sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+      sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
+      sed -i 's/#MaxAuthTries 6/MaxAuthTries 3/' /etc/ssh/sshd_config
+      sed -i 's/#ClientAliveInterval 0/ClientAliveInterval 300/' /etc/ssh/sshd_config
+      sed -i 's/#ClientAliveCountMax 3/ClientAliveCountMax 2/' /etc/ssh/sshd_config
+      systemctl restart sshd
+      
+      # Install CloudWatch agent
+      wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+      rpm -U ./amazon-cloudwatch-agent.rpm
+      
+      # Create a user for operations team
+      useradd -m -s /bin/bash opsuser
+      mkdir -p /home/opsuser/.ssh
+      cp /home/ec2-user/.ssh/authorized_keys /home/opsuser/.ssh/
+      chown -R opsuser:opsuser /home/opsuser/.ssh
+      chmod 700 /home/opsuser/.ssh
+      chmod 600 /home/opsuser/.ssh/authorized_keys
+      
+      # Add opsuser to sudoers
+      echo "opsuser ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/opsuser
+      
+      # Install session manager plugin for better security
+      curl "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm" -o "session-manager-plugin.rpm"
+      yum install -y session-manager-plugin.rpm
+      
+      # Log the completion
+      echo "Bastion host setup completed at $(date)" >> /var/log/bastion-setup.log
+    tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-lt', 'Type': 'LaunchTemplate'}) }}"
+  register: bastion_lt
+
+- name: Deploy bastion host instance
+  ec2_instance:
+    name: "{{ vpc_name }}-bastion-host"
+    region: "{{ aws_region }}"
+    launch_template:
+      id: "{{ bastion_lt.template_id }}"
+    vpc_subnet_id: "{{ public_subnet_ids[0] }}"
+    assign_public_ip: true
+    state: present
+    wait: true
+    wait_timeout: 300
+    tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-host', 'Type': 'BastionHost', 'Role': 'Management'}) }}"
+  register: bastion_instance
+
+- name: Create Elastic IP for bastion host
+  ec2_eip:
+    region: "{{ aws_region }}"
+    instance_id: "{{ bastion_instance.instances[0].instance_id }}"
+    in_vpc: true
+    state: present
+    tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-eip', 'Type': 'ElasticIP'}) }}"
+  register: bastion_eip
+
+- name: Wait for bastion host to be available
+  wait_for:
+    host: "{{ bastion_eip.public_ip }}"
+    port: 22
+    delay: 60
+    timeout: 300
+    state: started
+  delegate_to: localhost
+
+- name: Create SNS topic for bastion monitoring
+  sns_topic:
+    name: "{{ vpc_name }}-bastion-alerts"
+    region: "{{ aws_region }}"
+    state: present
+    subscriptions:
+      - endpoint: "{{ notification_email }}"
+        protocol: "email"
+    tags: "{{ common_tags }}"
+  register: sns_topic
+
+- name: Create CloudWatch alarm for bastion host CPU
+  ec2_metric_alarm:
+    name: "{{ vpc_name }}-bastion-high-cpu"
+    region: "{{ aws_region }}"
+    metric_name: "CPUUtilization"
+    namespace: "AWS/EC2"
+    statistic: "Average"
+    comparison: "GreaterThanThreshold"
+    threshold: 80.0
+    period: 300
+    evaluation_periods: 2
+    alarm_actions:
+      - "{{ sns_topic.sns_arn }}"
+    dimensions:
+      InstanceId: "{{ bastion_instance.instances[0].instance_id }}"
+    description: "Alarm when bastion host CPU exceeds 80%"
+    tags: "{{ common_tags }}"
+
+- name: Create IAM role for bastion host
+  iam_role:
+    name: "{{ vpc_name }}-bastion-role"
+    assume_role_policy_document: |
+      {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": {
+              "Service": "ec2.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+          }
+        ]
+      }
+    managed_policies:
+      - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+      - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      - "arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess"  # For enhanced SSM features
+    path: "/"
+    state: present
+    tags: "{{ common_tags }}"
+  register: bastion_role
+
+- name: Create IAM instance profile for bastion host
+  iam_instance_profile:
+    name: "{{ vpc_name }}-bastion-profile"
+    roles:
+      - "{{ bastion_role.role_name }}"
+    state: present
+  register: bastion_profile
+
+- name: Attach instance profile to bastion host
+  ec2_instance:
+    instance_ids:
+      - "{{ bastion_instance.instances[0].instance_id }}"
+    region: "{{ aws_region }}"
+    instance_role: "{{ bastion_profile.instance_profile_name }}"
+    state: present
+
+- name: Set bastion facts
+  set_fact:
+    bastion_instance_id: "{{ bastion_instance.instances[0].instance_id }}"
+    bastion_public_ip: "{{ bastion_eip.public_ip }}"
+    bastion_private_ip: "{{ bastion_instance.instances[0].private_ip_address }}"
+
+- name: Create bastion connection script (team access)
+  copy:
+    content: |
+      #!/bin/bash
+      # Bastion Host Connection Script
+      # Generated by Ansible VPC Automation
+      
+      BASTION_IP="{{ bastion_public_ip }}"
+      
+      echo "Connecting to bastion host via Session Manager..."
+      echo "Bastion IP: $BASTION_IP"
+      echo ""
+      
+      # Use AWS Session Manager for secure access (no SSH keys needed)
+      aws ssm start-session --target "{{ bastion_instance_id }}" --region "{{ aws_region }}"
+    dest: "./connect-bastion-ssm.sh"
+    mode: '0755'
+  when: enable_ssm_access | default(true)
+
+- name: Create SSH config for easy access
+  copy:
+    content: |
+      # SSH Configuration for VPC Infrastructure
+      # Add this to your ~/.ssh/config file
+      
+      Host {{ vpc_name }}-bastion
+          HostName {{ bastion_public_ip }}
+          User ec2-user
+          IdentityFile ./{{ bastion_key_pair }}.pem
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+      
+      # Example configuration for private instances via bastion
+      Host {{ vpc_name }}-private-*
+          User ec2-user
+          IdentityFile ./{{ bastion_key_pair }}.pem
+          ProxyJump {{ vpc_name }}-bastion
+          StrictHostKeyChecking no
+          UserKnownHostsFile /dev/null
+    dest: "./ssh-config"
+    mode: '0644'
+
+- name: Display bastion deployment summary
+  debug:
+    msg: |
+      Bastion Host Deployment Summary:
+      ================================
+      Instance ID: {{ bastion_instance_id }}
+      Public IP: {{ bastion_public_ip }}
+      Private IP: {{ bastion_private_ip }}
+      Key Pair: {{ bastion_key_pair }}
+      
+      Connection Instructions:
+      ------------------------
+      RECOMMENDED: Use Session Manager (no SSH keys needed):
+      - ./connect-bastion-ssm.sh
+      
+      Alternative SSH access:
+      - ./connect-bastion.sh (requires {{ bastion_key_pair }}.pem)
+      - Or directly: ssh -i {{ bastion_key_pair }}.pem ec2-user@{{ bastion_public_ip }}
+      
+      For team access, use Session Manager with IAM permissions.
+      
+      Security Features Enabled:
+      -------------------------
+      - Fail2Ban intrusion detection
+      - SSH hardening (no root/password login)
+      - CloudWatch monitoring
+      - Session Manager support
+      - Dedicated operations user account

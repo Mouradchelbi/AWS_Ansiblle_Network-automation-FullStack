@@ -1,0 +1,61 @@
+---
+# AWS-specific configuration variables
+
+# AWS Credentials (use IAM roles in production)
+# aws_access_key: "{{ vault_aws_access_key }}"  # Use ansible-vault
+# aws_secret_key: "{{ vault_aws_secret_key }}"  # Use ansible-vault
+
+# EC2 Key Pair (for bastion host)
+ec2_keypair:
+  name: "{{ bastion_key_pair }}"
+  public_key_path: "~/.ssh/id_rsa.pub"  # Update path as needed
+
+# Internet Gateway
+igw_name: "{{ vpc_name }}-igw"
+
+# NAT Gateway
+nat_gateway_name: "{{ vpc_name }}-nat-gateway"
+nat_eip_name: "{{ vpc_name }}-nat-eip"
+
+# Route Tables
+public_route_table_name: "{{ vpc_name }}-public-rt"
+private_route_table_name: "{{ vpc_name }}-private-rt"
+
+# Security Groups
+bastion_sg_name: "{{ vpc_name }}-bastion-sg"
+web_sg_name: "{{ vpc_name }}-web-sg"
+app_sg_name: "{{ vpc_name }}-app-sg"
+db_sg_name: "{{ vpc_name }}-db-sg"
+alb_sg_name: "{{ vpc_name }}-alb-sg"
+
+# Network ACLs
+public_nacl_name: "{{ vpc_name }}-public-nacl"
+private_nacl_name: "{{ vpc_name }}-private-nacl"
+db_nacl_name: "{{ vpc_name }}-db-nacl"
+
+# VPC Endpoints (for private subnet resources)
+vpc_endpoints:
+  s3:
+    service: "com.amazonaws.{{ aws_region }}.s3"
+    type: "Gateway"
+  ec2:
+    service: "com.amazonaws.{{ aws_region }}.ec2"
+    type: "Interface"
+
+# CloudWatch Logs
+vpc_flow_log_group: "/aws/vpc/flowlogs/{{ vpc_name }}"
+
+# Load Balancer Configuration
+alb_name: "{{ vpc_name }}-alb"
+alb_scheme: "internet-facing"
+
+# Auto Scaling Groups
+asg_name: "{{ vpc_name }}-asg"
+launch_template_name: "{{ vpc_name }}-lt"
+
+# RDS Configuration
+db_subnet_group_name: "{{ vpc_name }}-db-subnet-group"
+db_parameter_group_name: "{{ vpc_name }}-db-params"
+
+# ElastiCache Configuration
+cache_subnet_group_name: "{{ vpc_name }}-cache-subnet-group"

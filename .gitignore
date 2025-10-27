@@ -1,0 +1,69 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ansible
+*.retry
+.ansible/
+ansible.log
+
+# AWS credentials (never commit these!)
+.aws/
+*.pem
+*.key
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.pytest_cache/
+
+# Generated reports and outputs
+deployment_report_*.md
+validation_report_*.md
+connect-bastion.sh
+ssh-config
+
+# Terraform state files (if using Terraform alongside)
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
+
+# Local configuration overrides
+local_vars.yml
+override_vars.yml
+
+# Backup files
+*.bak
+*.backup
+
+# Log files
+*.log
+logs/
+
+# Package files
+*.tar.gz
+*.zip

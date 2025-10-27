@@ -1,0 +1,227 @@
+---
+# Security Groups and Network ACLs configuration
+
+- name: Create Bastion Host Security Group
+  ec2_group:
+    name: "{{ bastion_sg_name }}"
+    description: "Security group for bastion host"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    rules:
+      # SSH access from allowed IPs
+      - proto: tcp
+        ports:
+          - 22
+        cidr_ip: "{{ ssh_allowed_ips }}"
+        rule_desc: "SSH access for bastion host"
+    rules_egress:
+      # Allow all outbound traffic
+      - proto: all
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "All outbound traffic"
+    tags: "{{ common_tags | combine({'Name': bastion_sg_name, 'Type': 'SecurityGroup'}) }}"
+  register: bastion_sg
+
+- name: Create Web Tier Security Group (ALB)
+  ec2_group:
+    name: "{{ alb_sg_name }}"
+    description: "Security group for Application Load Balancer"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    rules:
+      # HTTP access
+      - proto: tcp
+        ports:
+          - 80
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "HTTP access"
+      # HTTPS access
+      - proto: tcp
+        ports:
+          - 443
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "HTTPS access"
+    rules_egress:
+      # Allow traffic to web servers
+      - proto: tcp
+        ports:
+          - 80
+          - 443
+        cidr_ip: "{{ vpc_cidr }}"
+        rule_desc: "Traffic to web servers"
+    tags: "{{ common_tags | combine({'Name': alb_sg_name, 'Type': 'SecurityGroup'}) }}"
+  register: alb_sg
+
+- name: Create Web Server Security Group
+  ec2_group:
+    name: "{{ web_sg_name }}"
+    description: "Security group for web servers"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    rules:
+      # SSH from bastion
+      - proto: tcp
+        ports:
+          - 22
+        group_id: "{{ bastion_sg.group_id }}"
+        rule_desc: "SSH from bastion host"
+      # HTTP from ALB
+      - proto: tcp
+        ports:
+          - 80
+        group_id: "{{ alb_sg.group_id }}"
+        rule_desc: "HTTP from ALB"
+      # HTTPS from ALB
+      - proto: tcp
+        ports:
+          - 443
+        group_id: "{{ alb_sg.group_id }}"
+        rule_desc: "HTTPS from ALB"
+    rules_egress:
+      # All outbound traffic
+      - proto: all
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "All outbound traffic"
+    tags: "{{ common_tags | combine({'Name': web_sg_name, 'Type': 'SecurityGroup'}) }}"
+  register: web_sg
+
+- name: Create Application Tier Security Group
+  ec2_group:
+    name: "{{ app_sg_name }}"
+    description: "Security group for application servers"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    rules:
+      # SSH from bastion
+      - proto: tcp
+        ports:
+          - 22
+        group_id: "{{ bastion_sg.group_id }}"
+        rule_desc: "SSH from bastion host"
+      # Application traffic from web tier
+      - proto: tcp
+        ports:
+          - 8080
+          - 8443
+        group_id: "{{ web_sg.group_id }}"
+        rule_desc: "App traffic from web tier"
+    rules_egress:
+      # All outbound traffic
+      - proto: all
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "All outbound traffic"
+    tags: "{{ common_tags | combine({'Name': app_sg_name, 'Type': 'SecurityGroup'}) }}"
+  register: app_sg
+
+- name: Create Database Security Group
+  ec2_group:
+    name: "{{ db_sg_name }}"
+    description: "Security group for database servers"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    rules:
+      # SSH from bastion
+      - proto: tcp
+        ports:
+          - 22
+        group_id: "{{ bastion_sg.group_id }}"
+        rule_desc: "SSH from bastion host"
+      # MySQL/PostgreSQL from app tier
+      - proto: tcp
+        ports:
+          - 3306
+          - 5432
+        group_id: "{{ app_sg.group_id }}"
+        rule_desc: "Database access from app tier"
+    rules_egress:
+      # Limited outbound traffic
+      - proto: tcp
+        ports:
+          - 80
+          - 443
+        cidr_ip: "0.0.0.0/0"
+        rule_desc: "HTTPS for updates"
+    tags: "{{ common_tags | combine({'Name': db_sg_name, 'Type': 'SecurityGroup'}) }}"
+  register: db_sg
+
+- name: Create Public Network ACL
+  ec2_vpc_nacl:
+    name: "{{ public_nacl_name }}"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    subnets: "{{ public_subnet_ids }}"
+    rules:
+      # Inbound rules
+      - [100, 'tcp', 'allow', '0.0.0.0/0', null, null, 80, 80]      # HTTP
+      - [110, 'tcp', 'allow', '0.0.0.0/0', null, null, 443, 443]   # HTTPS
+      - [120, 'tcp', 'allow', '0.0.0.0/0', null, null, 22, 22]     # SSH
+      - [130, 'tcp', 'allow', '0.0.0.0/0', null, null, 1024, 65535] # Ephemeral ports
+      # Outbound rules
+      - [100, 'tcp', 'allow', null, '0.0.0.0/0', 80, 80, null]     # HTTP
+      - [110, 'tcp', 'allow', null, '0.0.0.0/0', 443, 443, null]   # HTTPS
+      - [120, 'tcp', 'allow', null, '0.0.0.0/0', 22, 22, null]     # SSH
+      - [130, 'tcp', 'allow', null, '0.0.0.0/0', 1024, 65535, null] # Ephemeral ports
+    tags: "{{ common_tags | combine({'Name': public_nacl_name, 'Type': 'NetworkACL'}) }}"
+  register: public_nacl
+
+- name: Create Private Network ACL
+  ec2_vpc_nacl:
+    name: "{{ private_nacl_name }}"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    subnets: "{{ private_subnet_ids }}"
+    rules:
+      # Inbound rules
+      - [100, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 22, 22]       # SSH from VPC
+      - [110, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 80, 80]       # HTTP from VPC
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 443, 443]     # HTTPS from VPC
+      - [130, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 8080, 8080]   # App port from VPC
+      - [140, 'tcp', 'allow', '0.0.0.0/0', null, null, 1024, 65535]      # Ephemeral ports
+      # Outbound rules
+      - [100, 'tcp', 'allow', null, '0.0.0.0/0', 80, 80, null]           # HTTP
+      - [110, 'tcp', 'allow', null, '0.0.0.0/0', 443, 443, null]         # HTTPS
+      - [120, 'tcp', 'allow', null, '{{ vpc_cidr }}', 22, 22, null]       # SSH to VPC
+      - [130, 'tcp', 'allow', null, '{{ vpc_cidr }}', 1024, 65535, null]  # Ephemeral to VPC
+    tags: "{{ common_tags | combine({'Name': private_nacl_name, 'Type': 'NetworkACL'}) }}"
+  register: private_nacl
+
+- name: Create Database Network ACL
+  ec2_vpc_nacl:
+    name: "{{ db_nacl_name }}"
+    vpc_id: "{{ vpc_id }}"
+    region: "{{ aws_region }}"
+    subnets: "{{ database_subnet_ids }}"
+    rules:
+      # Inbound rules
+      - [100, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 22, 22]       # SSH from VPC
+      - [110, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 3306, 3306]   # MySQL from VPC
+      - [120, 'tcp', 'allow', '{{ vpc_cidr }}', null, null, 5432, 5432]   # PostgreSQL from VPC
+      - [130, 'tcp', 'allow', '0.0.0.0/0', null, null, 1024, 65535]      # Ephemeral ports
+      # Outbound rules
+      - [100, 'tcp', 'allow', null, '0.0.0.0/0', 80, 80, null]           # HTTP for updates
+      - [110, 'tcp', 'allow', null, '0.0.0.0/0', 443, 443, null]         # HTTPS for updates
+      - [120, 'tcp', 'allow', null, '{{ vpc_cidr }}', 1024, 65535, null]  # Ephemeral to VPC
+    tags: "{{ common_tags | combine({'Name': db_nacl_name, 'Type': 'NetworkACL'}) }}"
+  register: db_nacl
+
+- name: Set security group facts
+  set_fact:
+    bastion_sg_id: "{{ bastion_sg.group_id }}"
+    web_sg_id: "{{ web_sg.group_id }}"
+    app_sg_id: "{{ app_sg.group_id }}"
+    db_sg_id: "{{ db_sg.group_id }}"
+    alb_sg_id: "{{ alb_sg.group_id }}"
+
+- name: Display security configuration summary
+  debug:
+    msg: |
+      Security Configuration Summary:
+      ===============================
+      Bastion SG: {{ bastion_sg_id }}
+      Web SG: {{ web_sg_id }}
+      App SG: {{ app_sg_id }}
+      DB SG: {{ db_sg_id }}
+      ALB SG: {{ alb_sg_id }}
+      Public NACL: {{ public_nacl.nacl_id }}
+      Private NACL: {{ private_nacl.nacl_id }}
+      Database NACL: {{ db_nacl.nacl_id }}

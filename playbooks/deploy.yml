@@ -1,0 +1,71 @@
+---
+# Deployment playbook for AWS VPC infrastructure
+- name: Deploy AWS VPC Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  become: no
+  
+  vars:
+    deployment_mode: "{{ deploy_mode | default('full') }}"  # full, vpc-only, security-only, bastion-only
+  
+  pre_tasks:
+    - name: Display deployment mode
+      debug:
+        msg: "Deployment mode: {{ deployment_mode }}"
+    
+    - name: Validate deployment mode
+      assert:
+        that:
+          - deployment_mode in ['full', 'vpc-only', 'security-only', 'bastion-only']
+        fail_msg: "Invalid deployment mode. Use: full, vpc-only, security-only, or bastion-only"
+  
+  tasks:
+    - name: Include common setup
+      include_role:
+        name: common
+      tags: ['always']
+    
+    - name: Deploy VPC and networking
+      include_role:
+        name: vpc
+      when: deployment_mode in ['full', 'vpc-only']
+      tags: ['vpc', 'networking']
+    
+    - name: Deploy security components
+      include_role:
+        name: security
+      when: deployment_mode in ['full', 'security-only']
+      tags: ['security']
+    
+    - name: Deploy bastion host
+      include_role:
+        name: bastion
+      when: deployment_mode in ['full', 'bastion-only']
+      tags: ['bastion']
+  
+  post_tasks:
+    - name: Generate deployment report
+      template:
+        src: deployment_report.j2
+        dest: "./deployment_report_{{ ansible_date_time.epoch }}.md"
+      vars:
+        report_timestamp: "{{ ansible_date_time.iso8601 }}"
+      when: deployment_mode == 'full'
+    
+    - name: Display deployment completion
+      debug:
+        msg: |
+          ================================
+          DEPLOYMENT COMPLETED SUCCESSFULLY
+          ================================
+          Mode: {{ deployment_mode }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          Region: {{ aws_region }}
+          
+          Next Steps:
+          - Review the deployment report
+          - Test connectivity to bastion host
+          - Configure additional security policies if needed
+          - Set up monitoring and alerting
+          ================================

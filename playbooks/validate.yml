@@ -1,0 +1,273 @@
+---
+# Validation playbook for AWS VPC infrastructure
+- name: Validate AWS VPC Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: no
+  become: no
+  
+  vars:
+    validation_report: []
+    
+  tasks:
+    - name: Get VPC information
+      ec2_vpc_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ vpc_name }}"
+      register: vpc_validation
+    
+    - name: Validate VPC exists
+      assert:
+        that:
+          - vpc_validation.vpcs | length > 0
+          - vpc_validation.vpcs[0].state == 'available'
+        success_msg: "✓ VPC {{ vpc_name }} is available"
+        fail_msg: "✗ VPC {{ vpc_name }} not found or not available"
+    
+    - name: Set VPC ID for validation
+      set_fact:
+        vpc_id: "{{ vpc_validation.vpcs[0].vpc_id }}"
+    
+    - name: Validate Internet Gateway
+      ec2_vpc_igw_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.vpc-id: "{{ vpc_id }}"
+      register: igw_validation
+    
+    - name: Check Internet Gateway status
+      assert:
+        that:
+          - igw_validation.internet_gateways | length > 0
+          - igw_validation.internet_gateways[0].attachments[0].state == 'available'
+        success_msg: "✓ Internet Gateway is attached and available"
+        fail_msg: "✗ Internet Gateway not found or not properly attached"
+    
+    - name: Validate subnets
+      ec2_vpc_subnet_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: subnet_validation
+    
+    - name: Check subnet count and availability
+      assert:
+        that:
+          - subnet_validation.subnets | length >= 4
+          - subnet_validation.subnets | selectattr('state', 'equalto', 'available') | list | length == subnet_validation.subnets | length
+        success_msg: "✓ All subnets are available ({{ subnet_validation.subnets | length }} total)"
+        fail_msg: "✗ Subnet validation failed"
+    
+    - name: Validate NAT Gateway
+      ec2_vpc_nat_gateway_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: nat_validation
+      when: enable_nat_gateway
+    
+    - name: Check NAT Gateway status
+      assert:
+        that:
+          - nat_validation.result | length > 0
+          - nat_validation.result[0].state == 'available'
+        success_msg: "✓ NAT Gateway is available"
+        fail_msg: "✗ NAT Gateway not found or not available"
+      when: enable_nat_gateway
+    
+    - name: Validate security groups
+      ec2_group_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: sg_validation
+    
+    - name: Check security groups
+      assert:
+        that:
+          - sg_validation.security_groups | length >= 5  # Including default SG
+        success_msg: "✓ Security groups created ({{ sg_validation.security_groups | length }} total)"
+        fail_msg: "✗ Security groups validation failed"
+    
+    - name: Validate bastion host
+      ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ vpc_name }}-bastion-host"
+          "instance-state-name": ["running"]
+      register: bastion_validation
+    
+    - name: Check bastion host status
+      assert:
+        that:
+          - bastion_validation.instances | length > 0
+          - bastion_validation.instances[0].state.name == 'running'
+        success_msg: "✓ Bastion host is running"
+        fail_msg: "✗ Bastion host not found or not running"
+    
+    - name: Test bastion connectivity
+      wait_for:
+        host: "{{ bastion_validation.instances[0].public_ip_address }}"
+        port: 22
+        timeout: 10
+        state: started
+      register: bastion_connectivity
+      ignore_errors: true
+    
+    - name: Validate bastion SSH connectivity
+      debug:
+        msg: "{{ '✓ Bastion host SSH port is accessible' if bastion_connectivity is succeeded else '⚠ Bastion host SSH port not accessible (may need security group adjustment)' }}"
+    
+    - name: Validate route tables
+      ec2_vpc_route_table_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: rt_validation
+    
+    - name: Check route tables
+      assert:
+        that:
+          - rt_validation.route_tables | length >= 2  # Public and private route tables
+        success_msg: "✓ Route tables configured ({{ rt_validation.route_tables | length }} total)"
+        fail_msg: "✗ Route tables validation failed"
+    
+    - name: Validate VPC Flow Logs
+      ec2_vpc_flow_log_info:
+        region: "{{ aws_region }}"
+        filters:
+          resource-id: "{{ vpc_id }}"
+      register: flow_logs_validation
+      when: enable_flow_logs
+    
+    - name: Check VPC Flow Logs status
+      assert:
+        that:
+          - flow_logs_validation.flow_logs | length > 0
+          - flow_logs_validation.flow_logs[0].flow_log_status == 'ACTIVE'
+        success_msg: "✓ VPC Flow Logs are active"
+        fail_msg: "✗ VPC Flow Logs not found or not active"
+      when: enable_flow_logs
+    
+    - name: Generate validation summary
+      set_fact:
+        validation_summary:
+          vpc:
+            id: "{{ vpc_id }}"
+            status: "{{ vpc_validation.vpcs[0].state }}"
+            cidr: "{{ vpc_validation.vpcs[0].cidr_block }}"
+          internet_gateway:
+            count: "{{ igw_validation.internet_gateways | length }}"
+            status: "{{ igw_validation.internet_gateways[0].attachments[0].state if igw_validation.internet_gateways | length > 0 else 'none' }}"
+          subnets:
+            total: "{{ subnet_validation.subnets | length }}"
+            available: "{{ subnet_validation.subnets | selectattr('state', 'equalto', 'available') | list | length }}"
+          nat_gateway:
+            count: "{{ nat_validation.result | length if enable_nat_gateway else 0 }}"
+            status: "{{ nat_validation.result[0].state if enable_nat_gateway and nat_validation.result | length > 0 else 'disabled' }}"
+          security_groups:
+            count: "{{ sg_validation.security_groups | length }}"
+          bastion:
+            instance_id: "{{ bastion_validation.instances[0].instance_id if bastion_validation.instances | length > 0 else 'none' }}"
+            public_ip: "{{ bastion_validation.instances[0].public_ip_address if bastion_validation.instances | length > 0 else 'none' }}"
+            status: "{{ bastion_validation.instances[0].state.name if bastion_validation.instances | length > 0 else 'none' }}"
+            ssh_accessible: "{{ bastion_connectivity is succeeded }}"
+          route_tables:
+            count: "{{ rt_validation.route_tables | length }}"
+          flow_logs:
+            enabled: "{{ enable_flow_logs }}"
+            status: "{{ flow_logs_validation.flow_logs[0].flow_log_status if enable_flow_logs and flow_logs_validation.flow_logs | length > 0 else 'disabled' }}"
+    
+    - name: Create validation report
+      copy:
+        content: |
+          # AWS VPC Infrastructure Validation Report
+          
+          **Generated:** {{ ansible_date_time.iso8601 }}
+          **Region:** {{ aws_region }}
+          **VPC:** {{ vpc_name }}
+          
+          ## Validation Results
+          
+          ### VPC Configuration
+          - **VPC ID:** {{ validation_summary.vpc.id }}
+          - **Status:** {{ validation_summary.vpc.status }}
+          - **CIDR Block:** {{ validation_summary.vpc.cidr }}
+          
+          ### Network Components
+          - **Internet Gateway:** {{ '✓' if validation_summary.internet_gateway.count > 0 else '✗' }} ({{ validation_summary.internet_gateway.status }})
+          - **NAT Gateway:** {{ '✓' if validation_summary.nat_gateway.count > 0 else '⚠' }} ({{ validation_summary.nat_gateway.status }})
+          - **Subnets:** {{ validation_summary.subnets.available }}/{{ validation_summary.subnets.total }} available
+          - **Route Tables:** {{ validation_summary.route_tables.count }} configured
+          
+          ### Security
+          - **Security Groups:** {{ validation_summary.security_groups.count }} created
+          - **VPC Flow Logs:** {{ '✓ Active' if validation_summary.flow_logs.status == 'ACTIVE' else '⚠ ' + validation_summary.flow_logs.status }}
+          
+          ### Bastion Host
+          - **Instance ID:** {{ validation_summary.bastion.instance_id }}
+          - **Public IP:** {{ validation_summary.bastion.public_ip }}
+          - **Status:** {{ validation_summary.bastion.status }}
+          - **SSH Accessible:** {{ '✓' if validation_summary.bastion.ssh_accessible else '⚠' }}
+          
+          ## Connection Information
+          
+          ### Bastion Host Access
+          ```bash
+          ssh -i {{ bastion_key_pair }}.pem ec2-user@{{ validation_summary.bastion.public_ip }}
+          ```
+          
+          ### SSH Tunnel for Private Resources
+          ```bash
+          ssh -i {{ bastion_key_pair }}.pem -L 8080:private-instance-ip:80 ec2-user@{{ validation_summary.bastion.public_ip }}
+          ```
+          
+          ## Recommendations
+          
+          {% if not validation_summary.bastion.ssh_accessible %}
+          - **SSH Access Issue:** Bastion host SSH port may not be accessible. Check security group rules and ensure your IP is allowed.
+          {% endif %}
+          
+          {% if validation_summary.nat_gateway.status == 'disabled' %}
+          - **NAT Gateway:** Consider enabling NAT Gateway for private subnet internet access.
+          {% endif %}
+          
+          {% if validation_summary.flow_logs.status != 'ACTIVE' %}
+          - **Flow Logs:** Enable VPC Flow Logs for network monitoring and security analysis.
+          {% endif %}
+          
+          ## Next Steps
+          
+          1. **Test Connectivity:** Verify bastion host access and private subnet connectivity
+          2. **Deploy Applications:** Use the infrastructure to deploy your applications
+          3. **Monitor Resources:** Set up CloudWatch dashboards and alarms
+          4. **Security Review:** Review security group rules and NACLs
+          5. **Backup Strategy:** Implement backup policies for critical resources
+          
+          ---
+          *Report generated by Ansible VPC Automation*
+        dest: "./validation_report_{{ ansible_date_time.epoch }}.md"
+        mode: '0644'
+    
+    - name: Display validation results
+      debug:
+        msg: |
+          ================================
+          INFRASTRUCTURE VALIDATION COMPLETE
+          ================================
+          
+          VPC Status: {{ validation_summary.vpc.status }}
+          Subnets: {{ validation_summary.subnets.available }}/{{ validation_summary.subnets.total }} available
+          Security Groups: {{ validation_summary.security_groups.count }} configured
+          Bastion Host: {{ validation_summary.bastion.status }}
+          Bastion IP: {{ validation_summary.bastion.public_ip }}
+          SSH Access: {{ '✓' if validation_summary.bastion.ssh_accessible else '⚠' }}
+          
+          Detailed report saved to: validation_report_{{ ansible_date_time.epoch }}.md
+          
+          {% if validation_summary.bastion.ssh_accessible %}
+          Connection Command:
+          ssh -i {{ bastion_key_pair }}.pem ec2-user@{{ validation_summary.bastion.public_ip }}
+          {% endif %}
+          ================================

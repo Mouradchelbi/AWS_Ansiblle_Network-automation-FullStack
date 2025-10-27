@@ -1,0 +1,61 @@
+---
+# Common tasks for AWS VPC automation
+
+- name: Verify required variables are defined
+  assert:
+    that:
+      - aws_region is defined
+      - vpc_cidr is defined
+      - project_name is defined
+      - env_name is defined
+    fail_msg: "Required variables are not defined. Check group_vars configuration."
+    success_msg: "All required variables are properly defined."
+
+- name: Display deployment information
+  debug:
+    msg: |
+      Starting AWS VPC deployment with following configuration:
+      - Project: {{ project_name }}
+      - Environment: {{ env_name }}
+      - Region: {{ aws_region }}
+      - VPC CIDR: {{ vpc_cidr }}
+      - Owner: {{ owner }}
+
+- name: Ensure boto3 and botocore are installed
+  pip:
+    name:
+      - boto3
+      - botocore
+    state: present
+  delegate_to: localhost
+  run_once: true
+
+- name: Check AWS CLI configuration
+  command: aws sts get-caller-identity
+  register: aws_identity
+  changed_when: false
+  failed_when: aws_identity.rc != 0
+
+- name: Display AWS account information
+  debug:
+    msg: |
+      AWS Account ID: {{ (aws_identity.stdout | from_json).Account }}
+      AWS User ARN: {{ (aws_identity.stdout | from_json).Arn }}
+      
+- name: Create EC2 key pair for bastion host
+  ec2_key:
+    name: "{{ bastion_key_pair }}"
+    region: "{{ aws_region }}"
+    state: present
+  register: ec2_key_result
+
+- name: Save private key (if created)
+  copy:
+    content: "{{ ec2_key_result.key.private_key }}"
+    dest: "./{{ bastion_key_pair }}.pem"
+    mode: '0600'
+  when: ec2_key_result.key.private_key is defined
+
+- name: Display key pair information
+  debug:
+    msg: "Key pair '{{ bastion_key_pair }}' is ready for use."

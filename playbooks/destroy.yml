@@ -1,0 +1,243 @@
+---
+# Destruction playbook for AWS VPC infrastructure
+- name: Destroy AWS VPC Infrastructure
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  
+  vars:
+    destroy_mode: "{{ destroy_mode | default('confirm') }}"  # confirm, force
+    
+  pre_tasks:
+    - name: Confirmation prompt for infrastructure destruction
+      pause:
+        prompt: |
+          ==========================================
+          WARNING: INFRASTRUCTURE DESTRUCTION
+          ==========================================
+          
+          This will permanently delete the following resources:
+          - VPC: {{ vpc_name }}
+          - All subnets, route tables, and gateways
+          - Security groups and NACLs  
+          - Bastion host and associated resources
+          - All data will be lost permanently
+          
+          Type 'yes' to proceed with destruction
+      register: destroy_confirmation
+      when: destroy_mode == 'confirm'
+    
+    - name: Validate destruction confirmation
+      assert:
+        that:
+          - destroy_confirmation.user_input == 'yes'
+        fail_msg: "Destruction cancelled by user"
+      when: destroy_mode == 'confirm'
+    
+    - name: Display destruction warning for force mode
+      debug:
+        msg: |
+          FORCE MODE ENABLED - Proceeding with destruction without confirmation
+          All resources in {{ vpc_name }} will be destroyed
+      when: destroy_mode == 'force'
+  
+  tasks:
+    - name: Get VPC information
+      ec2_vpc_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ vpc_name }}"
+      register: existing_vpc
+    
+    - name: Set VPC facts if exists
+      set_fact:
+        vpc_id: "{{ existing_vpc.vpcs[0].vpc_id }}"
+      when: existing_vpc.vpcs | length > 0
+    
+    - name: Terminate bastion host instances
+      ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ vpc_name }}-bastion-host"
+          "instance-state-name": ["running", "stopped"]
+      register: bastion_instances
+    
+    - name: Terminate bastion instances
+      ec2_instance:
+        region: "{{ aws_region }}"
+        instance_ids: "{{ item.instance_id }}"
+        state: absent
+        wait: true
+      loop: "{{ bastion_instances.instances }}"
+      when: bastion_instances.instances | length > 0
+    
+    - name: Release Elastic IPs
+      ec2_eip_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": 
+            - "{{ vpc_name }}-bastion-eip"
+            - "{{ nat_eip_name }}"
+      register: elastic_ips
+    
+    - name: Release each Elastic IP
+      ec2_eip:
+        region: "{{ aws_region }}"
+        allocation_id: "{{ item.allocation_id }}"
+        state: absent
+      loop: "{{ elastic_ips.addresses }}"
+      when: elastic_ips.addresses | length > 0
+    
+    - name: Delete NAT Gateway
+      ec2_vpc_nat_gateway_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: nat_gateways
+      when: vpc_id is defined
+    
+    - name: Remove NAT Gateway
+      ec2_vpc_nat_gateway:
+        region: "{{ aws_region }}"
+        nat_gateway_id: "{{ item.nat_gateway_id }}"
+        state: absent
+        wait: true
+      loop: "{{ nat_gateways.result }}"
+      when: vpc_id is defined and nat_gateways.result | length > 0
+    
+    - name: Delete launch templates
+      ec2_launch_template:
+        name: "{{ vpc_name }}-bastion-lt"
+        region: "{{ aws_region }}"
+        state: absent
+      ignore_errors: true
+    
+    - name: Delete security groups
+      ec2_group_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: security_groups
+      when: vpc_id is defined
+    
+    - name: Remove security groups (except default)
+      ec2_group:
+        region: "{{ aws_region }}"
+        group_id: "{{ item.group_id }}"
+        state: absent
+      loop: "{{ security_groups.security_groups }}"
+      when: 
+        - vpc_id is defined 
+        - security_groups.security_groups | length > 0
+        - item.group_name != 'default'
+      ignore_errors: true
+    
+    - name: Delete subnets
+      ec2_vpc_subnet_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: subnets_info
+      when: vpc_id is defined
+    
+    - name: Remove subnets
+      ec2_vpc_subnet:
+        region: "{{ aws_region }}"
+        subnet_id: "{{ item.subnet_id }}"
+        state: absent
+      loop: "{{ subnets_info.subnets }}"
+      when: vpc_id is defined and subnets_info.subnets | length > 0
+    
+    - name: Delete route tables
+      ec2_vpc_route_table_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: route_tables
+      when: vpc_id is defined
+    
+    - name: Remove route tables (except main)
+      ec2_vpc_route_table:
+        region: "{{ aws_region }}"
+        route_table_id: "{{ item.route_table_id }}"
+        lookup: id
+        state: absent
+      loop: "{{ route_tables.route_tables }}"
+      when: 
+        - vpc_id is defined
+        - route_tables.route_tables | length > 0
+        - not item.associations[0].main | default(false)
+      ignore_errors: true
+    
+    - name: Delete Internet Gateway
+      ec2_vpc_igw_info:
+        region: "{{ aws_region }}"
+        filters:
+          attachment.vpc-id: "{{ vpc_id }}"
+      register: igw_info
+      when: vpc_id is defined
+    
+    - name: Detach and delete Internet Gateway
+      ec2_vpc_igw:
+        region: "{{ aws_region }}"
+        vpc_id: "{{ vpc_id }}"
+        state: absent
+      when: vpc_id is defined and igw_info.internet_gateways | length > 0
+    
+    - name: Delete VPC
+      ec2_vpc_net:
+        region: "{{ aws_region }}"
+        vpc_id: "{{ vpc_id }}"
+        state: absent
+      when: vpc_id is defined
+    
+    - name: Delete CloudWatch Log Groups
+      cloudwatchlogs_log_group:
+        log_group_name: "{{ vpc_flow_log_group }}"
+        region: "{{ aws_region }}"
+        state: absent
+      ignore_errors: true
+    
+    - name: Delete IAM roles and policies
+      iam_role:
+        name: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ vpc_name }}-flowlogs-role"
+        - "{{ vpc_name }}-bastion-role"
+      ignore_errors: true
+    
+    - name: Delete SNS topics
+      sns_topic:
+        name: "{{ vpc_name }}-bastion-alerts"
+        region: "{{ aws_region }}"
+        state: absent
+      ignore_errors: true
+    
+    - name: Clean up local files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "./{{ bastion_key_pair }}.pem"
+        - "./connect-bastion.sh"
+        - "./ssh-config"
+        - "./deployment_report_*.md"
+      ignore_errors: true
+  
+  post_tasks:
+    - name: Display destruction completion
+      debug:
+        msg: |
+          ================================
+          DESTRUCTION COMPLETED
+          ================================
+          All AWS resources have been removed
+          Local files have been cleaned up
+          
+          Resources destroyed:
+          - VPC: {{ vpc_name }}
+          - Region: {{ aws_region }}
+          - Timestamp: {{ ansible_date_time.iso8601 }}
+          ================================
