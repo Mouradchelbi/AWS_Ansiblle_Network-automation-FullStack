@@ -72,7 +72,34 @@
       loop: "{{ bastion_instances.instances }}"
       when: bastion_instances.instances | length > 0
     
-    - name: Release Elastic IPs
+    - name: Get NAT Gateways
+      amazon.aws.ec2_vpc_nat_gateway_info:
+        region: "{{ aws_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: nat_gateways
+      when: vpc_id is defined
+
+    - name: Display NAT Gateway Information
+      debug:
+        msg: "Found {{ nat_gateways.nat_gateways | length }} NAT Gateways to remove"
+      when: vpc_id is defined
+
+    - name: Remove NAT Gateways
+      amazon.aws.ec2_vpc_nat_gateway:
+        region: "{{ aws_region }}"
+        nat_gateway_id: "{{ item.nat_gateway_id }}"
+        state: absent
+        wait: true
+      loop: "{{ nat_gateways.nat_gateways }}"
+      when: vpc_id is defined and nat_gateways.nat_gateways | length > 0
+
+    - name: Wait for NAT Gateway deletion
+      pause:
+        seconds: 45
+      when: vpc_id is defined and nat_gateways.nat_gateways | length > 0
+
+    - name: Get Elastic IPs
       amazon.aws.ec2_eip_info:
         region: "{{ aws_region }}"
         filters:
@@ -80,33 +107,19 @@
             - "{{ vpc_name }}-bastion-eip"
             - "{{ nat_eip_name }}"
       register: elastic_ips
-    
+
+    - name: Display EIP Information
+      debug:
+        msg: "Found {{ elastic_ips.addresses | length }} Elastic IPs to release"
+
     - name: Release each Elastic IP
       amazon.aws.ec2_eip:
         region: "{{ aws_region }}"
-        device_id: "{{ item.network_interface_id }}"
-        public_ip: "{{ item.public_ip }}"
+        release_on_disassociation: true
+        allocation_id: "{{ item.allocation_id }}"
         state: absent
-        in_vpc: true
       loop: "{{ elastic_ips.addresses }}"
       when: elastic_ips.addresses | length > 0
-    
-    - name: Delete NAT Gateway
-      amazon.aws.ec2_vpc_nat_gateway_info:
-        region: "{{ aws_region }}"
-        filters:
-          vpc-id: "{{ vpc_id }}"
-      register: nat_gateways
-      when: vpc_id is defined
-    
-    - name: Remove NAT Gateway
-      ec2_vpc_nat_gateway:
-        region: "{{ aws_region }}"
-        nat_gateway_id: "{{ item.nat_gateway_id }}"
-        state: absent
-        wait: true
-      loop: "{{ nat_gateways.result }}"
-      when: vpc_id is defined and nat_gateways.result | length > 0
     
     - name: Delete launch templates
       ec2_launch_template:
