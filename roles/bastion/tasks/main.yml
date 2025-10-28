@@ -39,7 +39,7 @@
     name: "{{ vpc_name }}-bastion-host"
     region: "{{ aws_region }}"
     launch_template:
-      id: "{{ bastion_lt.template_id }}"
+      id: "{{ bastion_lt.launch_template.launch_template_id }}"
     vpc_subnet_id: "{{ public_subnet_ids[0] }}"
     assign_public_ip: true
     state: present
