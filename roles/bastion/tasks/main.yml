@@ -34,6 +34,10 @@
     tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-lt', 'Type': 'LaunchTemplate'}) }}"
   register: bastion_lt
 
+- name: Debug launch template structure
+  debug:
+    var: bastion_lt
+
 - name: Deploy bastion host instance
   ec2_instance:
     name: "{{ vpc_name }}-bastion-host"
