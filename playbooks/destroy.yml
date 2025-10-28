@@ -41,7 +41,15 @@
           FORCE MODE ENABLED - Proceeding with destruction without confirmation
           All resources in {{ vpc_name }} will be destroyed
       when: destroy_mode == 'force'
-  
+
+    - name: Check current infrastructure configuration
+      set_fact:
+        is_test_environment: "{{ availability_zones | default([]) | length == 1 }}"
+
+    - name: Display environment type
+      debug:
+        msg: "Detected {{ 'TEST' if is_test_environment else 'PRODUCTION' }} environment configuration"
+
   tasks:
     - name: Get VPC information
       amazon.aws.ec2_vpc_net_info:
@@ -78,7 +86,7 @@
         filters:
           vpc-id: "{{ vpc_id }}"
       register: nat_gateways
-      when: vpc_id is defined
+      when: vpc_id is defined and enable_nat_gateway | default(false)
 
     - name: Display NAT Gateway Information
       debug:
@@ -212,6 +220,7 @@
         log_group_name: "{{ vpc_flow_log_group }}"
         region: "{{ aws_region }}"
         state: absent
+      when: enable_flow_logs | default(false)
       ignore_errors: true
     
     - name: Delete IAM roles and policies
@@ -251,8 +260,17 @@
           All AWS resources have been removed
           Local files have been cleaned up
           
+          Environment Type: {{ 'TEST' if is_test_environment else 'PRODUCTION' }}
           Resources destroyed:
           - VPC: {{ vpc_name }}
           - Region: {{ aws_region }}
+          - AZs: {{ '1 (Test)' if is_test_environment else 'Multiple (Production)' }}
+          - NAT Gateway: {{ 'Enabled' if enable_nat_gateway | default(false) else 'Disabled' }}
+          - Flow Logs: {{ 'Enabled' if enable_flow_logs | default(false) else 'Disabled' }}
           - Timestamp: {{ ansible_date_time.iso8601 }}
           ================================
+          
+          {% if not is_test_environment %}
+          WARNING: Production environment has been destroyed.
+          Please ensure you have backups if needed.
+          {% endif %}
