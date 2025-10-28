@@ -64,21 +64,7 @@
   set_fact:
     private_subnet_ids: "{{ private_subnets_info.results | map(attribute='subnet.id') | list }}"
 
-- name: Create database subnets
-  ec2_vpc_subnet:
-    vpc_id: "{{ vpc_id }}"
-    cidr: "{{ item.cidr }}"
-    az: "{{ item.az }}"
-    region: "{{ aws_region }}"
-    state: present
-    map_public: false
-    tags: "{{ common_tags | combine({'Name': item.name, 'Type': 'DatabaseSubnet', 'Tier': 'Database'}) }}"
-  register: database_subnets_info
-  loop: "{{ database_subnets }}"
 
-- name: Set database subnet IDs fact
-  set_fact:
-    database_subnet_ids: "{{ database_subnets_info.results | map(attribute='subnet.id') | list }}"
 
 - name: Check existing Elastic IPs
   shell: >
@@ -171,7 +157,7 @@
     vpc_id: "{{ vpc_id }}"
     region: "{{ aws_region }}"
     routes: "{{ [{'dest': '0.0.0.0/0', 'nat_gateway_id': nat_gateway_id}] if (enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != '') else [] }}"
-    subnets: "{{ private_subnet_ids + database_subnet_ids }}"
+    subnets: "{{ private_subnet_ids }}"
     tags: "{{ common_tags | combine({'Name': private_route_table_name, 'Type': 'RouteTable', 'Description': 'Private subnets route table'}) }}"
   register: private_rt
 
@@ -303,8 +289,11 @@
 - name: Display Flow Logs creation result
   debug:
     msg: "Flow Logs creation {{ 'succeeded' if flow_logs_result.rc == 0 else 'failed: ' + flow_logs_result.stderr }}"
-  when: enable_flow_logs and flow_logs_result is defined
-  when: enable_flow_logs and flowlogs_role is defined and (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
+  when: >
+    enable_flow_logs and 
+    flow_logs_result is defined and 
+    flowlogs_role is defined and 
+    (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
 
 - name: Display VPC deployment summary
   debug:
@@ -314,7 +303,6 @@
       VPC ID: {{ vpc_id }}
       Internet Gateway: {{ igw_id }}
       NAT Gateway: {{ nat_gateway_id if enable_nat_gateway else 'Not created' }}
-      Public Subnets: {{ public_subnet_ids | length }} created
-      Private Subnets: {{ private_subnet_ids | length }} created
-      Database Subnets: {{ database_subnet_ids | length }} created
+      Public Subnet: Created in {{ availability_zone }}
+      Private Subnet: Created in {{ availability_zone }}
       Flow Logs: {{ 'Enabled' if enable_flow_logs else 'Disabled' }}
