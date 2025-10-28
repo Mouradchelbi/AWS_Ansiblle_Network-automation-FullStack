@@ -38,24 +38,30 @@
   debug:
     var: bastion_lt
 
+- name: Set launch template ID fact
+  set_fact:
+    bastion_lt_id: "{{ bastion_lt.template.launch_template_id | default(bastion_lt.launch_template.launch_template_id | default(bastion_lt.id | default(bastion_lt.launch_template_id))) }}"
+
 - name: Deploy bastion host instance
-  ec2_instance:
+  amazon.aws.ec2_instance:
     name: "{{ vpc_name }}-bastion-host"
     region: "{{ aws_region }}"
     launch_template:
-      id: "{{ bastion_lt.launch_template_id }}"
+      launch_template_id: "{{ bastion_lt_id }}"
+      version: "$Latest"
     vpc_subnet_id: "{{ public_subnet_ids[0] }}"
-    assign_public_ip: true
-    state: present
+    network:
+      assign_public_ip: true
+    state: running
     wait: true
     wait_timeout: 300
     tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-host', 'Type': 'BastionHost', 'Role': 'Management'}) }}"
   register: bastion_instance
 
 - name: Create Elastic IP for bastion host
-  ec2_eip:
+  amazon.aws.ec2_eip:
     region: "{{ aws_region }}"
-    instance_id: "{{ bastion_instance.instances[0].instance_id }}"
+    device_id: "{{ bastion_instance.instances[0].instance_id }}"
     in_vpc: true
     state: present
     tags: "{{ common_tags | combine({'Name': vpc_name + '-bastion-eip', 'Type': 'ElasticIP'}) }}"
@@ -71,7 +77,7 @@
   delegate_to: localhost
 
 - name: Create SNS topic for bastion monitoring
-  sns_topic:
+  community.aws.sns_topic:
     name: "{{ vpc_name }}-bastion-alerts"
     region: "{{ aws_region }}"
     state: present
@@ -80,15 +86,16 @@
         protocol: "email"
     tags: "{{ common_tags }}"
   register: sns_topic
+  when: notification_email is defined
 
 - name: Create CloudWatch alarm for bastion host CPU
-  ec2_metric_alarm:
+  community.aws.ec2_metric_alarm:
     name: "{{ vpc_name }}-bastion-high-cpu"
     region: "{{ aws_region }}"
-    metric_name: "CPUUtilization"
+    metric: "CPUUtilization"
     namespace: "AWS/EC2"
     statistic: "Average"
-    comparison: "GreaterThanThreshold"
+    comparison: ">="
     threshold: 80.0
     period: 300
     evaluation_periods: 2
@@ -98,9 +105,10 @@
       InstanceId: "{{ bastion_instance.instances[0].instance_id }}"
     description: "Alarm when bastion host CPU exceeds 80%"
     tags: "{{ common_tags }}"
+  when: notification_email is defined
 
 - name: Create IAM role for bastion host
-  iam_role:
+  community.aws.iam_role:
     name: "{{ vpc_name }}-bastion-role"
     assume_role_policy_document: |
       {
@@ -118,7 +126,7 @@
     managed_policies:
       - "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
       - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-      - "arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess"  # For enhanced SSM features
+      - "arn:aws:iam::aws:policy/AmazonSSMDirectoryServiceAccess"
     path: "/"
     state: present
     tags: "{{ common_tags }}"
@@ -132,12 +140,18 @@
   register: bastion_profile
 
 - name: Attach instance profile to bastion host
-  ec2_instance:
+  amazon.aws.ec2_instance:
     instance_ids:
       - "{{ bastion_instance.instances[0].instance_id }}"
     region: "{{ aws_region }}"
-    instance_role: "{{ bastion_profile.instance_profile_name }}"
-    state: present
+    instance_role: "{{ bastion_profile.arn }}"
+    state: running
+  register: bastion_instance_updated
+
+- name: Update bastion instance facts after profile attachment
+  set_fact:
+    bastion_instance: "{{ bastion_instance_updated }}"
+  when: bastion_instance_updated.changed
 
 - name: Set bastion facts
   set_fact:
@@ -162,7 +176,32 @@
       aws ssm start-session --target "{{ bastion_instance_id }}" --region "{{ aws_region }}"
     dest: "./connect-bastion-ssm.sh"
     mode: '0755'
+  delegate_to: localhost
   when: enable_ssm_access | default(true)
+
+- name: Create SSH connection script
+  copy:
+    content: |
+      #!/bin/bash
+      # SSH Connection Script for Bastion Host
+      
+      BASTION_IP="{{ bastion_public_ip }}"
+      KEY_FILE="{{ bastion_key_pair }}.pem"
+      
+      if [ ! -f "$KEY_FILE" ]; then
+          echo "Error: Key file $KEY_FILE not found!"
+          echo "Please ensure the key pair file is in the current directory."
+          exit 1
+      fi
+      
+      echo "Connecting to bastion host via SSH..."
+      echo "Bastion IP: $BASTION_IP"
+      echo ""
+      
+      ssh -i "$KEY_FILE" ec2-user@"$BASTION_IP"
+    dest: "./connect-bastion.sh"
+    mode: '0755'
+  delegate_to: localhost
 
 - name: Create SSH config for easy access
   copy:
@@ -186,6 +225,7 @@
           UserKnownHostsFile /dev/null
     dest: "./ssh-config"
     mode: '0644'
+  delegate_to: localhost
 
 - name: Display bastion deployment summary
   debug:
@@ -196,6 +236,7 @@
       Public IP: {{ bastion_public_ip }}
       Private IP: {{ bastion_private_ip }}
       Key Pair: {{ bastion_key_pair }}
+      Launch Template ID: {{ bastion_lt_id }}
       
       Connection Instructions:
       ------------------------
@@ -215,3 +256,4 @@
       - CloudWatch monitoring
       - Session Manager support
       - Dedicated operations user account
+      - IAM instance profile attached
