@@ -245,7 +245,7 @@
   when: enable_flow_logs
 
 - name: Create IAM role for VPC Flow Logs
-  iam_role:
+  amazon.aws.iam_role:
     name: "{{ vpc_name }}-flowlogs-role"
     assume_role_policy_document: |
       {
@@ -261,11 +261,12 @@
         ]
       }
     state: present
+    tags: "{{ common_tags }}"
   register: flowlogs_role
   when: enable_flow_logs
 
 - name: Attach inline policy to Flow Logs role
-  iam_policy:
+  amazon.aws.iam_policy:
     iam_type: role
     iam_name: "{{ vpc_name }}-flowlogs-role"
     policy_name: "VPCFlowLogsDeliveryPolicy"
@@ -325,25 +326,25 @@
 
 - name: Enable VPC Flow Logs
   shell: >
-    aws ec2 create-flow-logs 
-    --resource-type VPC 
-    --resource-ids {{ vpc_id }} 
-    --traffic-type ALL 
+    aws ec2 create-flow-logs
+    --resource-type VPC
+    --resource-ids {{ vpc_id }}
+    --traffic-type ALL
     --log-destination-type cloud-watch-logs
     --log-group-name {{ vpc_flow_log_group }}
     --deliver-logs-permission-arn {{ flow_logs_role_arn }}
     --region {{ aws_region }}
   register: flow_logs_result
-  when: enable_flow_logs and flow_logs_role_arn is defined
+  when: enable_flow_logs and flow_logs_role_arn is defined and (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
   ignore_errors: true
 
 - name: Display Flow Logs creation result
   debug:
     msg: "Flow Logs creation {{ 'succeeded' if flow_logs_result.rc == 0 else 'failed: ' + flow_logs_result.stderr }}"
   when: >
-    enable_flow_logs and 
-    flow_logs_result is defined and 
-    flowlogs_role is defined and 
+    enable_flow_logs and
+    flow_logs_result is defined and
+    flowlogs_role is defined and
     (existing_flow_logs.stdout | from_json).FlowLogs | length == 0
 
 - name: Display VPC deployment summary
