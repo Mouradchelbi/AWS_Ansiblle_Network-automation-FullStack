@@ -141,15 +141,28 @@
       - nat_gateway_info: {{ nat_gateway_info | default({}) | to_nice_json }}
       - nat_gateway_id: {{ nat_gateway_id | default('Not set') }}
 
+- name: Debug NAT Gateway ID
+  debug:
+    msg: "Checking NAT Gateway with ID: {{ nat_gateway_id }}"
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
+
 - name: Wait for NAT Gateway to be available
   ec2_vpc_nat_gateway_info:
-    nat_gateway_ids:
-      - "{{ nat_gateway_id }}"
     region: "{{ aws_region }}"
+    filters:
+      nat-gateway-id: "{{ nat_gateway_id }}"
   register: nat_gateway_status
-  until: nat_gateway_status.nat_gateways[0].state == "available"
+  until: nat_gateway_status is defined and 
+         nat_gateway_status.result is defined and 
+         nat_gateway_status.result | length > 0 and 
+         nat_gateway_status.result[0].state == "available"
   retries: 30
   delay: 10
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
+
+- name: Debug NAT Gateway Status
+  debug:
+    var: nat_gateway_status
   when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
 
 - name: Create private route table
