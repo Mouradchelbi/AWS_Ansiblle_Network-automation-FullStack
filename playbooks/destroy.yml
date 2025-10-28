@@ -154,16 +154,15 @@
       register: security_groups
       when: vpc_id is defined
     
-    - name: Remove security groups (except default)
+    - name: Delete security groups (except default) - reverse order to handle dependencies
       ec2_group:
         region: "{{ aws_region }}"
         group_id: "{{ item.group_id }}"
         state: absent
-      loop: "{{ security_groups.security_groups }}"
+      loop: "{{ security_groups.security_groups | rejectattr('group_name', 'equalto', 'default') | list | reverse }}"
       when: 
         - vpc_id is defined 
         - security_groups.security_groups | length > 0
-        - item.group_name != 'default'
       ignore_errors: true
     
     - name: Delete subnets
@@ -175,7 +174,7 @@
       when: vpc_id is defined
     
     - name: Remove subnets
-      ec2_vpc_subnet:
+      amazon.aws.ec2_vpc_subnet:
         region: "{{ aws_region }}"
         subnet_id: "{{ item.subnet_id }}"
         state: absent
