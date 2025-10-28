@@ -116,7 +116,7 @@
     - name: Wait for NAT Gateway deletion
       pause:
         seconds: 45
-      when: vpc_id is defined and nat_gateways.nat_gateways | length > 0
+      when: vpc_id is defined and nat_gateways_info.result | default([]) | length > 0
 
     - name: Get Elastic IPs
       amazon.aws.ec2_eip_info:
