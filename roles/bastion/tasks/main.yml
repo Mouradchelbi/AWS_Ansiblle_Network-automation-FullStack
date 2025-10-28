@@ -42,16 +42,27 @@
   set_fact:
     bastion_lt_id: "{{ bastion_lt.template.launch_template_id | default(bastion_lt.launch_template.launch_template_id | default(bastion_lt.id | default(bastion_lt.launch_template_id))) }}"
 
+- name: Debug launch template ID
+  debug:
+    msg: "Launch Template ID: {{ bastion_lt_id }}"
+
+- name: Fail if launch template ID is not set
+  fail:
+    msg: "Launch template ID could not be determined from bastion_lt structure"
+  when: bastion_lt_id is not defined or bastion_lt_id == ''
+
 - name: Deploy bastion host instance
   amazon.aws.ec2_instance:
     name: "{{ vpc_name }}-bastion-host"
     region: "{{ aws_region }}"
     launch_template:
-      launch_template_id: "{{ bastion_lt_id }}"
-      version: "$Latest"
-    vpc_subnet_id: "{{ public_subnet_ids[0] }}"
-    network:
-      assign_public_ip: true
+      id: "{{ bastion_lt_id }}"
+    network_interfaces:
+      - device_index: 0
+        subnet_id: "{{ public_subnet_ids[0] }}"
+        groups:
+          - "{{ bastion_sg_id }}"
+        associate_public_ip_address: true
     state: running
     wait: true
     wait_timeout: 300
