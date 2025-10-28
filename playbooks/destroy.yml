@@ -134,8 +134,7 @@
     - name: Release each Elastic IP
       amazon.aws.ec2_eip:
         region: "{{ aws_region }}"
-        release_on_disassociation: true
-        allocation_id: "{{ item.allocation_id }}"
+        public_ip: "{{ item.public_ip }}"
         state: absent
       loop: "{{ elastic_ips.addresses }}"
       when: elastic_ips.addresses | length > 0
