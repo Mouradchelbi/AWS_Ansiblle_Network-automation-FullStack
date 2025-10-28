@@ -108,16 +108,27 @@
     nat_gateway_possible: "{{ existing_eip_count < 5 }}"
   when: enable_nat_gateway
 
-- name: Allocate Elastic IP for NAT Gateway
-  ec2_eip:
+- name: Check for existing NAT Gateway
+  amazon.aws.ec2_vpc_nat_gateway_info:
     region: "{{ aws_region }}"
-    in_vpc: true
-    state: present
-    tags: "{{ common_tags | combine({'Name': nat_eip_name, 'Type': 'ElasticIP'}) }}"
-  register: nat_eip
+    filters:
+      vpc-id: "{{ vpc_id }}"
+      state: ["available", "pending"]
+  register: existing_nat_gateways
   when: enable_nat_gateway and nat_gateway_possible
 
-- name: Create NAT Gateway
+- name: Set existing NAT Gateway fact
+  set_fact:
+    existing_nat_gateway: "{{ existing_nat_gateways.result[0] if (existing_nat_gateways.result | length > 0) else {} }}"
+  when: enable_nat_gateway and nat_gateway_possible and existing_nat_gateways is defined
+
+- name: Use existing NAT Gateway if available
+  set_fact:
+    nat_gateway_id: "{{ existing_nat_gateway.nat_gateway_id }}"
+    nat_gateway_info: "{{ existing_nat_gateway }}"
+  when: enable_nat_gateway and nat_gateway_possible and existing_nat_gateway.nat_gateway_id is defined
+
+- name: Create NAT Gateway (only if none exists)
   ec2_vpc_nat_gateway:
     subnet_id: "{{ public_subnet_ids[0] }}"
     allocation_id: "{{ nat_eip.allocation_id }}"
@@ -125,7 +136,7 @@
     state: present
     tags: "{{ common_tags | combine({'Name': nat_gateway_name, 'Type': 'NATGateway'}) }}"
   register: nat_gateway_info
-  when: enable_nat_gateway and nat_gateway_possible and nat_eip is defined
+  when: enable_nat_gateway and nat_gateway_possible and nat_eip is defined and existing_nat_gateway.nat_gateway_id is not defined
 
 - name: Set NAT Gateway ID fact
   set_fact:
@@ -155,6 +166,8 @@
       - enable_nat_gateway: {{ enable_nat_gateway | default(false) }}
       - nat_gateway_info: {{ nat_gateway_info | default({}) | to_nice_json }}
       - nat_gateway_id: {{ nat_gateway_id | default('Not set') }}
+      - existing_nat_gateway: {{ existing_nat_gateway | default('None found') }}
+      - action_taken: {{ 'Using existing' if existing_nat_gateway.nat_gateway_id is defined else 'Creating new' }}
 
 - name: Debug NAT Gateway ID
   debug:
@@ -166,7 +179,7 @@
     var: nat_gateway_id
   when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
 
-- name: Wait for NAT Gateway to be available
+- name: Wait for NAT Gateway to be available (only for newly created ones)
   amazon.aws.ec2_vpc_nat_gateway_info:
     region: "{{ aws_region }}"
     filters:
@@ -178,7 +191,7 @@
          nat_gateway_status.result[0].state == "available"
   retries: 30
   delay: 10
-  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != '' and existing_nat_gateway.nat_gateway_id is not defined
 
 - name: Debug NAT Gateway status after wait
   debug:
