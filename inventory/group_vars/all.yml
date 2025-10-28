@@ -27,6 +27,11 @@ private_subnets:
     az: "{{ availability_zone }}"
     name: "{{ vpc_name }}-private-subnet"
 
+database_subnets:
+  - cidr: "10.0.20.0/24"
+    az: "{{ availability_zone }}"
+    name: "{{ vpc_name }}-database-subnet"
+
 # Bastion Host Configuration
 bastion_ami_id: "ami-0c02fb55956c7d316"  # Amazon Linux 2 AMI (update as needed)
 bastion_instance_type: "t2.micro"  # Using t2.micro for testing

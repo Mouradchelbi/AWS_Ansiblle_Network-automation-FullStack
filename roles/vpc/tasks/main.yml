@@ -64,6 +64,21 @@
   set_fact:
     private_subnet_ids: "{{ private_subnets_info.results | map(attribute='subnet.id') | list }}"
 
+- name: Create database subnets
+  ec2_vpc_subnet:
+    vpc_id: "{{ vpc_id }}"
+    cidr: "{{ item.cidr }}"
+    az: "{{ item.az }}"
+    region: "{{ aws_region }}"
+    state: present
+    map_public: false
+    tags: "{{ common_tags | combine({'Name': item.name, 'Type': 'DatabaseSubnet', 'Tier': 'Database'}) }}"
+  register: database_subnets_info
+  loop: "{{ database_subnets }}"
+
+- name: Set database subnet IDs fact
+  set_fact:
+    database_subnet_ids: "{{ database_subnets_info.results | map(attribute='subnet.id') | list }}"
 
 
 - name: Check existing Elastic IPs
@@ -328,4 +343,5 @@
       NAT Gateway: {{ nat_gateway_id if enable_nat_gateway else 'Not created' }}
       Public Subnet: Created in {{ availability_zone }}
       Private Subnet: Created in {{ availability_zone }}
+      Database Subnet: Created in {{ availability_zone }}
       Flow Logs: {{ 'Enabled' if enable_flow_logs else 'Disabled' }}
