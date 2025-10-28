@@ -93,15 +93,10 @@
         var: nat_gateways_info
       when: vpc_id is defined and nat_gateways_info is defined
 
-    - name: Set NAT Gateway facts
-      set_fact:
-        nat_gateway_list: "{{ nat_gateways_info.result | default([]) }}"
-      when: vpc_id is defined and nat_gateways_info is defined
-
     - name: Display NAT Gateway Information
       debug:
-        msg: "Found {{ nat_gateway_list | length }} NAT Gateway(s) to remove"
-      when: vpc_id is defined and nat_gateway_list is defined
+        msg: "Found {{ nat_gateways_info.result | default([]) | length }} NAT Gateway(s) to remove"
+      when: vpc_id is defined and nat_gateways_info is defined
 
     - name: Remove NAT Gateways
       amazon.aws.ec2_vpc_nat_gateway:
@@ -109,8 +104,8 @@
         nat_gateway_id: "{{ item.nat_gateway_id }}"
         state: absent
         wait: true
-      loop: "{{ nat_gateway_list }}"
-      when: vpc_id is defined and nat_gateway_list is defined and nat_gateway_list | length > 0
+      loop: "{{ nat_gateways_info.result | default([]) }}"
+      when: vpc_id is defined and nat_gateways_info is defined and nat_gateways_info.result | default([]) | length > 0
       register: nat_gateway_deletion
 
     - name: Debug NAT Gateway deletion results

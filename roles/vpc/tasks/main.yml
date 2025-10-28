@@ -146,8 +146,13 @@
     msg: "Checking NAT Gateway with ID: {{ nat_gateway_id }}"
   when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
 
+- name: Debug NAT Gateway status before wait
+  debug:
+    var: nat_gateway_id
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
+
 - name: Wait for NAT Gateway to be available
-  ec2_vpc_nat_gateway_info:
+  amazon.aws.ec2_vpc_nat_gateway_info:
     region: "{{ aws_region }}"
     filters:
       nat-gateway-id: "{{ nat_gateway_id }}"
@@ -158,6 +163,11 @@
          nat_gateway_status.result[0].state == "available"
   retries: 30
   delay: 10
+  when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
+
+- name: Debug NAT Gateway status after wait
+  debug:
+    var: nat_gateway_status
   when: enable_nat_gateway and nat_gateway_possible and nat_gateway_id is defined and nat_gateway_id != ''
 
 - name: Debug NAT Gateway Status
